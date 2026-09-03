@@ -8,6 +8,12 @@ use std::time::Instant;
 use anyhow::Context as _;
 use openxr as xr;
 use parking_lot::Mutex;
+use windows::{
+    Win32::UI::WindowsAndMessaging::{
+        MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
+    },
+    core::HSTRING,
+};
 
 use crate::{
     config::Config,
@@ -231,6 +237,7 @@ impl VrState {
             // reached the log and stdout, which is the part that has to survive.
             if e.downcast_ref::<LoaderUnavailable>().is_some() {
                 tracing::error!(target: "vr", "fatal: {e:#}");
+                fatal_message_box(&format!("{e:#}"));
                 std::process::abort();
             }
             tracing::warn!(
@@ -487,4 +494,20 @@ enum PumpAction {
     StateChanged(xr::SessionState),
     /// The instance is being lost; tear down.
     InstanceLost,
+}
+
+/// Block on a modal error dialog before a deliberate abort, so a deployment fault does not present as
+/// a silent game crash: the log line alone is easy to miss when the process vanishes moments after
+/// injection. Topmost and foregrounded so it surfaces over the game window.
+fn fatal_message_box(message: &str) {
+    let text = format!("jc3vr cannot start and will close the game.\n\n{message}");
+    // SAFETY: plain Win32 call with valid, null-terminated wide strings that outlive it.
+    unsafe {
+        MessageBoxW(
+            None,
+            &HSTRING::from(text),
+            &HSTRING::from("jc3vr: fatal error"),
+            MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST,
+        );
+    }
 }
