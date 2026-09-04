@@ -20,7 +20,9 @@
 #
 # On NixOS the launch-client runs under `steam-run` for the FHS env it needs.
 #
-# Overridable via env: STEAM_ROOT, PROTON_DIR, JC3_BUS_NAME.
+# Overridable via env: STEAM_ROOT, PROTON_DIR, JC3_BUS_NAME. The bus name must
+# match the one jc3boot's launcher claimed; the default mirrors jc3boot's, so
+# only pass JC3_BUS_NAME here if it was also passed at launch.
 # `--release` builds and injects the release profile (e.g. for representative
 # profiler captures); any other args are forwarded to the injector.
 set -euo pipefail
@@ -28,7 +30,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 STEAM="${STEAM_ROOT:-$HOME/.steam/steam}"
 PROTON="${PROTON_DIR:-$STEAM/steamapps/common/Proton - Experimental}"
-BUS="${JC3_BUS_NAME:-com.jc3vr.JustCause3}"
+BUS="${JC3_BUS_NAME:-com.jc3boot.JustCause3}"
 LAUNCH_CLIENT="$STEAM/steamapps/common/SteamLinuxRuntime_sniper/pressure-vessel/bin/steam-runtime-launch-client"
 
 PROFILE=debug
