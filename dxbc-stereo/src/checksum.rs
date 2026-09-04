@@ -59,8 +59,8 @@ fn dxbc_hash(data: &[u8]) -> [u8; 16] {
     }
 
     let mut out = [0u8; 16];
-    for (chunk, word) in out.chunks_exact_mut(4).zip(state) {
-        chunk.copy_from_slice(&word.to_le_bytes());
+    for (chunk, word) in out.as_chunks_mut::<4>().0.iter_mut().zip(state) {
+        *chunk = word.to_le_bytes();
     }
     out
 }
@@ -92,8 +92,8 @@ const MD5_K: [u32; 64] = [
 /// Apply the standard MD5 compression function for one 64-byte block to `state`.
 fn md5_transform(state: &mut [u32; 4], block: &[u8; 64]) {
     let mut m = [0u32; 16];
-    for (word, chunk) in m.iter_mut().zip(block.chunks_exact(4)) {
-        *word = u32::from_le_bytes(chunk.try_into().expect("4-byte chunk"));
+    for (word, chunk) in m.iter_mut().zip(block.as_chunks::<4>().0) {
+        *word = u32::from_le_bytes(*chunk);
     }
     let [mut a, mut b, mut c, mut d] = *state;
     for i in 0..64 {

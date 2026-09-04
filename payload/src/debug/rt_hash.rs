@@ -196,7 +196,7 @@ fn to_rgba8(
     for y in 0..height as usize {
         let row = bytes.get(y * pitch..y * pitch + tight)?;
         if swap_rb {
-            for px in row.chunks_exact(4) {
+            for px in row.as_chunks::<4>().0 {
                 out.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
             }
         } else {
@@ -233,12 +233,12 @@ fn write_png_named(label: String, width: u32, height: u32, rgba: Vec<u8>) {
 /// the comparison.
 fn hash_bytes(data: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut chunks = data.chunks_exact(8);
-    for chunk in &mut chunks {
-        let word = u64::from_le_bytes(chunk.try_into().expect("chunks_exact(8) yields 8 bytes"));
+    let (words, remainder) = data.as_chunks::<8>();
+    for chunk in words {
+        let word = u64::from_le_bytes(*chunk);
         h = (h ^ word).wrapping_mul(0x0000_0100_0000_01b3);
     }
-    for &b in chunks.remainder() {
+    for &b in remainder {
         h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
     }
     h

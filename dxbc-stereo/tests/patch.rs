@@ -262,8 +262,10 @@ fn shex_tokens(blob: &[u8]) -> Vec<Vec<u32>> {
     let stream = TokenStream::new(shex.body(blob)).expect("stream");
     let body = shex.body(blob);
     let all: Vec<u32> = body
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
         .collect();
     stream
         .instructions()

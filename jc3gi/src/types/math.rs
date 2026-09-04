@@ -270,7 +270,7 @@ impl From<Matrix4> for glam::Mat4 {
 impl std::fmt::Debug for Matrix4 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut list = f.debug_list();
-        for row in self.data.chunks_exact(4) {
+        for row in self.data.as_chunks::<4>().0 {
             list.entry(&row);
         }
         list.finish()

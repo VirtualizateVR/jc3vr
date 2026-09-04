@@ -95,8 +95,10 @@ fn reprojected_vs_position_is_only_the_meye_epilogue() {
     let body = shex.body(&reprojected);
     let stream = TokenStream::new(body).expect("stream");
     let tokens: Vec<u32> = body
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
         .collect();
 
     const OPCODE_DP4: u32 = 0x11;
@@ -208,8 +210,10 @@ fn validate_reprojected(blob: &[u8]) -> Result<(), String> {
 
     let pos_reg = position_output_register(blob).ok_or("no SV_Position output")?;
     let tokens: Vec<u32> = body
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
         .collect();
     let mut writers = Vec::new();
     for insn in stream.instructions() {
@@ -258,8 +262,10 @@ fn cb13_declared_size(blob: &[u8]) -> Option<u32> {
     let shex = dxbc.shader_chunk()?;
     let body = shex.body(blob);
     let tokens: Vec<u32> = body
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
         .collect();
     let stream = TokenStream::new(body).ok()?;
     for insn in stream.instructions() {

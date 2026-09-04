@@ -803,8 +803,10 @@ fn declared_stereo_registers(blob: &[u8]) -> (Option<u32>, Option<u32>) {
     };
     let tokens: Vec<u32> = shex
         .body(blob)
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().expect("4 bytes")))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
         .collect();
 
     let (mut input, mut output) = (None, None);

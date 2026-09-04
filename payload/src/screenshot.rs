@@ -370,7 +370,7 @@ fn write_screenshot(mut pending: PendingWrite) -> anyhow::Result<PathBuf> {
 /// composited by its alpha, so passing that through turns a perfectly good capture into a viewer's
 /// blank page.
 fn to_rgba8_opaque(pixels: &mut [u8], bgra: bool) {
-    for pixel in pixels.chunks_exact_mut(4) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
         if bgra {
             pixel.swap(0, 2);
         }
