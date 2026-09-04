@@ -52,8 +52,8 @@ don't route through `ForEachRb`.
 ## Related: spawn visibility
 
 `CSpawnSystem::Update` (`0x140_EFE_E90`; spawn singleton `0x142_F18_998`, `m_SpawnBFBC` `+0x168`,
-`m_SpawnBFBCParams` `+0x170`, `m_SpawnBFBCState` `+0x178`, `m_CenterPos` `+0x194`, `m_ViewPos` `+0x1A0`,
-`m_ViewDir` `+0x1AC`) calls `GetBFBCFrustumParamsForCameraAndTime` at its tail, passing the camera
+`m_SpawnBFBCParams` `+0x170`, `m_SpawnBFBCState` `+0x178`, `m_CenterPos` `+0x184`, `m_ViewPos` `+0x190`,
+`m_ViewDir` `+0x19C`) calls `GetBFBCFrustumParamsForCameraAndTime` at its tail, passing the camera
 manager's `m_ActiveCamera` (not the occluder manager's `m_CullingCamera`). The resulting BFBC params are
 used in `CSpawnFactoryImpl::CheckInternal` (`0x140_F09_430`) as a "don't (de)spawn while visible" gate.
 Its budgets are characters and vehicles, so it governs NPC/vehicle (de)spawns near the view edge, not

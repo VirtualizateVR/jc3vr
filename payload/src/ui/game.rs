@@ -5,6 +5,8 @@ use std::sync::atomic::Ordering;
 use jc3gi::{
     character::character::{AimState, Character, get_Character_EnableLocoStrafing},
     input::locomotion::{get_LocoUtil_NoAimStrafeMaxAngle, get_LocoUtil_NoAimStrafeMaxAngleAlt},
+    spawn_system::SpawnSystem,
+    types::math::Matrix4,
 };
 
 use crate::{
@@ -323,5 +325,40 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
             }
             patchbox(ui, "Decouple enabled", &mut game.m_DecoupleEnabled);
         });
+
+        ui.collapsing("Spawn", |ui| {
+            if ui
+                .button("Spawn exploding barrel")
+                .on_hover_text(
+                    "Queue a spawn request for the shipped \"Exploding Barrel\" prop definition \
+                     a few metres along the current view direction. The spawn is asynchronous; \
+                     the barrel appears once its entity has streamed in.",
+                )
+                .clicked()
+                && let Some(spawn_system) = SpawnSystem::get()
+            {
+                let pos = &spawn_system.m_ViewPos;
+                let dir = &spawn_system.m_ViewDir;
+                let mut transform = Matrix4::IDENTITY;
+                for axis in 0..3 {
+                    transform.data[12 + axis] =
+                        pos.data[axis] + dir.data[axis] * BARREL_SPAWN_DISTANCE;
+                }
+                spawn_system.Spawn(
+                    // The only prop definition tagged "barrel" is the exploding fuel barrel.
+                    c"barrel".as_ptr().cast(),
+                    &transform,
+                    // Skip the LOS/proximity/spawn-block checks: the point is to spawn where
+                    // the player is looking, which those checks exist to prevent.
+                    SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                );
+            }
+        });
     }
 }
+
+/// How far along the view direction to place a debug-spawned object. Far enough that the object
+/// does not overlap the player, close enough to land in front of them.
+const BARREL_SPAWN_DISTANCE: f32 = 4.0;
