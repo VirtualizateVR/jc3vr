@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod camera;
 pub mod diagnostics;
+pub mod director;
 pub mod environment;
 pub mod game;
 pub mod hud;
@@ -33,11 +34,12 @@ pub enum Tab {
     Hud,
     Environment,
     Vr,
+    Director,
 }
 
 impl Tab {
     /// Every tab, in the order the default layout lists them.
-    const ALL: [Tab; 9] = [
+    const ALL: [Tab; 10] = [
         Tab::Performance,
         Tab::Render,
         Tab::Previews,
@@ -47,6 +49,7 @@ impl Tab {
         Tab::Hud,
         Tab::Environment,
         Tab::Vr,
+        Tab::Director,
     ];
 }
 
@@ -78,6 +81,7 @@ impl egui_dock::TabViewer for TabBodies<'_> {
             Tab::Hud => hud::egui_debug_hud(ui, self.renderer),
             Tab::Environment => environment::render(ui),
             Tab::Vr => vr::egui_debug_vr(ui),
+            Tab::Director => director::render(ui),
         }
     }
 

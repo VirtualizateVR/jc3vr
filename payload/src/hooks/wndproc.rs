@@ -131,6 +131,15 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     }
 
+    // The director's bindable keys (`crate::director::keymap`): fed every key-down after the fixed
+    // function keys above so those keep precedence. Consumed when bound, so the game does not also
+    // act on the key; auto-repeat is passed through as a non-first press and ignored.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
+        && crate::director::keymap::on_key_down(wparam.0 as u16, (lparam.0 & 0x4000_0000) == 0)
+    {
+        return LRESULT(0);
+    }
+
     // Track the mouse buttons and wheel for the panel cursor (see `crate::hud::cursor`): the
     // `SendMouseEvents` detour hands Scaleform the live button bitmask each frame instead of the
     // steering action map's effector edges. Observed, not consumed -- egui and the game still see

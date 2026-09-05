@@ -25,6 +25,7 @@ mod capture;
 mod config;
 mod crash;
 mod debug;
+mod director;
 mod far_field;
 mod fsr;
 mod grapple;
@@ -239,6 +240,11 @@ fn update() {
             shutdown();
             return;
         }
+
+        // The directing tools' reconciliation pass (time scale, god mode, heat, queued teleports and
+        // spawns) runs before the debug UI so a hotkey and a panel click in the same frame land in
+        // one pass, and before the game's own update consumes the state they set.
+        director::update();
 
         // The per-eye captures feed the VR blit, the desktop mirror, and the F10 capture composite.
         // Driven here rather than from inside the egui closure below: they are what VR submits, and

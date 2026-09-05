@@ -27,6 +27,7 @@ static OVERLAY: Mutex<Option<HudTarget>> = Mutex::new(None);
 /// not the VR runtime lock (see [`crate::hud::egui_panel::is_active`] for why).
 pub(crate) fn is_active() -> bool {
     crate::vr::render_params(0).is_some()
+        && !crate::director::cinematic::active()
         && crate::config::Config::lock_query(|c| c.vr.mirror && !c.hud.egui_panel.enabled)
 }
 

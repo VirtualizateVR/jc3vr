@@ -23,13 +23,15 @@
 //! [`MovementConfig`](crate::hooks::input::MovementConfig) in `hooks::input::config`,
 //! [`FsrConfig`](crate::fsr::FsrConfig) in `fsr::config`,
 //! [`HudConfig`](crate::hud::HudConfig) in `hud::config`,
-//! [`HeadPoseConfig`](crate::headpose::HeadPoseConfig) in `headpose::config`, and
-//! [`VrConfig`](crate::vr::VrConfig) in `vr::config`.
+//! [`HeadPoseConfig`](crate::headpose::HeadPoseConfig) in `headpose::config`,
+//! [`VrConfig`](crate::vr::VrConfig) in `vr::config`, and
+//! [`DirectorConfig`](crate::director::DirectorConfig) in `director`.
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    director::DirectorConfig,
     far_field::FarFieldConfig,
     fsr::FsrConfig,
     headpose::HeadPoseConfig,
@@ -69,6 +71,7 @@ pub struct Config {
     pub headpose: HeadPoseConfig,
     pub body_ik: BodyIkConfig,
     pub vr: VrConfig,
+    pub director: DirectorConfig,
 }
 impl Config {
     pub const fn new() -> Self {
@@ -85,6 +88,7 @@ impl Config {
             headpose: HeadPoseConfig::new(),
             body_ik: BodyIkConfig::new(),
             vr: VrConfig::new(),
+            director: DirectorConfig::new(),
         }
     }
 

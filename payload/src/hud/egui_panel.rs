@@ -53,7 +53,9 @@ static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// slot (a separate lock, published per frame precisely so draw-thread hooks can read it), not the
 /// runtime lock.
 pub(crate) fn is_active() -> bool {
-    Config::lock_query(|c| c.hud.egui_panel.enabled) && crate::vr::render_params(0).is_some()
+    Config::lock_query(|c| c.hud.egui_panel.enabled)
+        && !crate::director::cinematic::active()
+        && crate::vr::render_params(0).is_some()
 }
 
 /// The panel texture size when the panel is active, or `None` otherwise. The egui layout is sized to

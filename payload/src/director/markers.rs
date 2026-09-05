@@ -1,0 +1,108 @@
+//! Take markers: a timestamped line per hotkey press, so a take can be found inside a long
+//! recording without scrubbing.
+//!
+//! Each marker is appended to `markers.jsonl` in the session folder, one JSON object per line
+//! with the wall clock, the engine's game-run time, and a label. The wall clock is what lines a
+//! marker up against a host-side recording; the game time is what lines it up against the pose
+//! sidecar the capture path writes. The capture path is expected to fold these into its own
+//! sidecar once it exists; until then the session file is the record.
+
+use std::io::Write as _;
+
+use jc3gi::clock::Clock;
+use parking_lot::Mutex;
+use serde::Serialize;
+
+/// One marker line.
+#[derive(Serialize, Clone)]
+pub struct Marker {
+    /// A session-local ordinal, from 1.
+    pub index: u32,
+    /// The local wall-clock stamp (`session::stamp` format).
+    pub stamp: String,
+    /// Milliseconds since the Unix epoch, for lining up against a host recording.
+    pub unix_ms: i64,
+    /// The engine's game-run time in microseconds, or `None` before the clock is up.
+    pub game_run_time_us: Option<u64>,
+    pub label: String,
+}
+
+/// Record a marker with `label` (empty for an unlabelled take marker).
+pub fn mark(label: &str) {
+    let mut state = STATE.lock();
+    state.count += 1;
+    // SAFETY: a read of the clock singleton's counters; main-thread data read from the main thread
+    // (the hotkey and the debug tab both run there).
+    let game_run_time_us = unsafe { Clock::get().map(|c| c.m_GameRunTimeMicro) };
+    let marker = Marker {
+        index: state.count,
+        stamp: crate::session::stamp(),
+        unix_ms: jiff::Timestamp::now().as_millisecond(),
+        game_run_time_us,
+        label: label.trim().to_owned(),
+    };
+    tracing::info!(
+        "director: take marker {} at {} ({})",
+        marker.index,
+        marker.stamp,
+        if marker.label.is_empty() {
+            "unlabelled"
+        } else {
+            marker.label.as_str()
+        }
+    );
+    state.recent.push(marker.clone());
+    if state.recent.len() > RECENT_SHOWN {
+        state.recent.remove(0);
+    }
+    write_line(&marker);
+}
+
+/// The most recent markers, newest last, for the debug tab.
+pub fn recent() -> Vec<Marker> {
+    STATE.lock().recent.clone()
+}
+
+/// How many recent markers the debug tab lists.
+pub const RECENT_SHOWN: usize = 8;
+
+struct State {
+    count: u32,
+    recent: Vec<Marker>,
+}
+
+static STATE: Mutex<State> = Mutex::new(State {
+    count: 0,
+    recent: Vec::new(),
+});
+
+fn write_line(marker: &Marker) {
+    let Some(dir) = crate::session::dir() else {
+        return;
+    };
+    let path = match dir {
+        Ok(dir) => dir.join("markers.jsonl"),
+        Err(e) => {
+            tracing::warn!("director: could not create the session folder for markers: {e}");
+            return;
+        }
+    };
+    let line = match serde_json::to_string(marker) {
+        Ok(line) => line,
+        Err(e) => {
+            tracing::warn!("director: could not serialize a marker: {e}");
+            return;
+        }
+    };
+    let result = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut file| writeln!(file, "{line}"));
+    if let Err(e) = result {
+        tracing::warn!(
+            "director: could not append a marker to {}: {e}",
+            path.display()
+        );
+    }
+}

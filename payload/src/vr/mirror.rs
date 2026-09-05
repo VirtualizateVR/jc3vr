@@ -223,7 +223,7 @@ unsafe fn present_mirror_inner(eye: usize) -> anyhow::Result<()> {
         // (`crate::hud::mirror_overlay`) -- so here we only composite that texture as an
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
-        if !crate::capture::is_active() {
+        if !crate::capture::is_active() && !crate::director::cinematic::active() {
             let panel = Config::lock_query(|c| c.hud.egui_panel);
             if panel.enabled {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop

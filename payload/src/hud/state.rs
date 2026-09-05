@@ -422,6 +422,11 @@ impl HudState {
         target: &Texture,
         _eye: usize,
     ) {
+        // Cinematic mode hides the HUD by skipping the quad: the redirect keeps drawing the game's
+        // HUD into the offscreen texture, so flipping the mode back shows the live HUD at once.
+        if crate::director::cinematic::active() {
+            return;
+        }
         self.draw_panels(context, device, target);
         self.draw_cursor(context, device, target);
     }
