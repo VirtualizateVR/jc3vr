@@ -36,6 +36,7 @@ mod lifecycle;
 mod logging;
 #[cfg(feature = "profiler")]
 mod profiler;
+mod recorder;
 mod screenshot;
 mod session;
 mod stereo;
@@ -128,6 +129,12 @@ fn shutdown_startup() {
     // precisely because it is too slow to do inline, so the same unjoined-thread hazard applies --
     // and unlike the profiler's, this one is not behind a feature.
     if !screenshot::shutdown() {
+        module::pin();
+    }
+
+    // And for the recorder's writer thread, which streams frames to the host and appends the pose
+    // sidecar: stop the recording and wait for the drain, on the same argument.
+    if !recorder::shutdown() {
         module::pin();
     }
 

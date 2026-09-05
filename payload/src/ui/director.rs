@@ -12,6 +12,7 @@ use crate::{
         teleport::{self, TeleportMode},
         time,
     },
+    recorder,
 };
 
 /// Render the Director tab body.
@@ -34,6 +35,9 @@ pub(crate) fn render(ui: &mut egui::Ui) {
     egui::CollapsingHeader::new("Spawn")
         .default_open(true)
         .show(ui, spawn_ui);
+    egui::CollapsingHeader::new("Recording")
+        .default_open(true)
+        .show(ui, recording_ui);
     egui::CollapsingHeader::new("Take markers")
         .default_open(true)
         .show(ui, markers_ui);
@@ -338,6 +342,69 @@ fn spawn_ui(ui: &mut egui::Ui) {
                 }
             }
         });
+}
+
+fn recording_ui(ui: &mut egui::Ui) {
+    let status = recorder::status();
+    ui.horizontal(|ui| {
+        if status.recording {
+            if ui.button("Stop recording").clicked() {
+                recorder::stop();
+            }
+        } else if ui.button("Start recording").clicked() {
+            recorder::start();
+        }
+        ui.label(if status.recording {
+            if status.connected {
+                "recording"
+            } else {
+                "recording, waiting for the host listener"
+            }
+        } else {
+            "stopped"
+        });
+    });
+    if let Some((w, h)) = status.size {
+        ui.label(format!(
+            "Stream {w}x{h}: {} frames sent, {} repeated, {} dropped",
+            status.frames_sent, status.frames_duplicated, status.frames_dropped
+        ));
+    }
+    if let Some(folder) = &status.folder {
+        ui.label(format!("Sidecar in the session folder under {folder}"));
+    }
+    if let Some(error) = &status.error {
+        ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
+    }
+    {
+        let mut cfg = CONFIG.lock();
+        let r = &mut cfg.recorder;
+        ui.add_enabled_ui(!status.recording, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Eye:");
+                ui.selectable_value(&mut r.eye, 0, "left");
+                ui.selectable_value(&mut r.eye, 1, "right");
+            });
+            ui.add(Slider::new(&mut r.scale, recorder::MIN_SCALE..=1.0).text("Scale"))
+                .on_hover_text("The stream size as a fraction of the eye render size.");
+            ui.add(Slider::new(&mut r.frame_rate, 24..=144).text("Frame rate (header)"))
+                .on_hover_text(
+                    "Written into the stream header, which is what the encoder times frames by. \
+                     Set it to the headset's refresh rate.",
+                );
+            ui.horizontal(|ui| {
+                ui.label("Host:");
+                ui.text_edit_singleline(&mut r.host)
+                    .on_hover_text("Blank for loopback.");
+                ui.label("Port:");
+                ui.add(egui::DragValue::new(&mut r.port));
+            });
+        });
+    }
+    ui.label(
+        "Run scripts/capture_host.sh on the host to listen; the stream is yuv4mpegpipe over TCP \
+         and the per-frame pose sidecar goes to the session folder.",
+    );
 }
 
 /// The debug tab's marker label field.

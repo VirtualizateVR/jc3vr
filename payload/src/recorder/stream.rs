@@ -1,0 +1,400 @@
+//! The recorder's writer thread: the TCP stream to the host encoder and the per-frame sidecar.
+//!
+//! The stream is `yuv4mpegpipe`: a one-line text header carrying the size, rate, and chroma
+//! layout, then `FRAME\n` followed by the planar bytes for each frame. It is self-describing, so
+//! the host side needs no dimensions up front, and every frame is the same size, so a dropped or
+//! duplicated frame never desynchronizes the parser. The connection is made from this thread with
+//! retries, so the recording can be started before the host listener is up; frames that arrive
+//! before the connection exists are dropped and counted.
+//!
+//! The sidecar lives in `capture/<stamp>/` under the session folder: `stream.json` with the
+//! stream parameters, and `frames.jsonl` with one line per frame written to the stream, carrying
+//! the stream frame index (what the video's frame number is), the capture index from the render
+//! thread, the wall clock, the engine's game-run time, whether the frame is a duplicate, and the
+//! located HMD views for the frame.
+
+use std::{
+    io::Write as _,
+    net::TcpStream,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, SyncSender, TrySendError},
+    },
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
+
+use anyhow::Context as _;
+use parking_lot::Mutex;
+use serde::Serialize;
+
+use crate::{recorder::RecorderConfig, vr::CaptureViews};
+
+/// What the render thread knows about a frame at capture time.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameMetadata {
+    /// The render thread's capture ordinal, from zero at the start of the recording.
+    pub frame: u32,
+    pub unix_ms: i64,
+    pub game_run_time_us: Option<u64>,
+    pub eye: usize,
+    /// The stream's luma plane size.
+    pub width: u32,
+    pub height: u32,
+    pub views: Option<CaptureViews>,
+}
+
+/// One unit of work for the writer.
+pub enum Frame {
+    /// Fresh planar bytes for the frame.
+    Fresh(Vec<u8>, FrameMetadata),
+    /// The readback was not ready: re-send the previous frame's bytes under this metadata.
+    Duplicate(FrameMetadata),
+}
+
+/// The result of queueing a frame.
+pub enum SendOutcome {
+    Queued,
+    /// The writer's queue is full; the frame is dropped.
+    Full,
+    /// The writer has failed with this message; the recording should stop.
+    Failed(String),
+}
+
+/// The writer thread's handle, owned by the recorder state.
+pub struct Writer {
+    sender: Option<SyncSender<Frame>>,
+    pool: Receiver<Vec<u8>>,
+    handle: Option<JoinHandle<()>>,
+    shared: Arc<Shared>,
+}
+
+impl Writer {
+    /// Create the sidecar folder and spawn the writer thread, which connects to the host in the
+    /// background.
+    pub fn spawn(cfg: &RecorderConfig, stamp: &str) -> anyhow::Result<Self> {
+        let folder = crate::session::subdir("capture")
+            .context("the session folder is unavailable")?
+            .context("could not create the session capture folder")?
+            .join(stamp);
+        std::fs::create_dir_all(&folder)
+            .with_context(|| format!("could not create {}", folder.display()))?;
+        let sidecar = std::fs::File::create(folder.join("frames.jsonl"))
+            .with_context(|| format!("could not create the sidecar in {}", folder.display()))?;
+        let (sender, receiver) = mpsc::sync_channel(QUEUE_DEPTH);
+        let (pool_sender, pool) = mpsc::sync_channel(QUEUE_DEPTH + 2);
+        let shared = Arc::new(Shared {
+            connected: AtomicBool::new(false),
+            error: Mutex::new(None),
+        });
+        let thread_shared = Arc::clone(&shared);
+        let target = format!("{}:{}", cfg.host(), cfg.port);
+        let frame_rate = cfg.frame_rate.max(1);
+        let handle = std::thread::Builder::new()
+            .name("jc3vr-recorder".to_owned())
+            .spawn(move || {
+                let mut session = WriterThread {
+                    target,
+                    frame_rate,
+                    folder,
+                    sidecar: std::io::BufWriter::new(sidecar),
+                    stream: None,
+                    header_written: false,
+                    last_fresh: None,
+                    stream_frame: 0,
+                    dropped_before_connect: 0,
+                    pool: pool_sender,
+                    shared: thread_shared,
+                };
+                session.run(receiver);
+            })
+            .context("could not spawn the recorder writer thread")?;
+        Ok(Self {
+            sender: Some(sender),
+            pool,
+            handle: Some(handle),
+            shared,
+        })
+    }
+
+    /// A buffer for the converter to fill: one the writer has finished with, or a fresh one.
+    pub fn take_buffer(&self, len: usize) -> Vec<u8> {
+        let mut buffer = self.pool.try_recv().unwrap_or_default();
+        buffer.resize(len, 0);
+        buffer
+    }
+
+    /// Queue a frame without blocking the render thread.
+    pub fn send(&self, frame: Frame) -> SendOutcome {
+        if let Some(error) = self.shared.error.lock().clone() {
+            return SendOutcome::Failed(error);
+        }
+        let Some(sender) = self.sender.as_ref() else {
+            return SendOutcome::Failed("the writer is finishing".to_owned());
+        };
+        match sender.try_send(frame) {
+            Ok(()) => SendOutcome::Queued,
+            Err(TrySendError::Full(_)) => SendOutcome::Full,
+            Err(TrySendError::Disconnected(_)) => {
+                SendOutcome::Failed("the writer thread has exited".to_owned())
+            }
+        }
+    }
+
+    /// Whether the thread holds a live connection to the host.
+    pub fn connected(&self) -> bool {
+        self.shared.connected.load(Ordering::Relaxed)
+    }
+
+    /// Close the queue so the thread drains what it has, closes the stream, and exits.
+    pub fn finish(&mut self) {
+        self.sender = None;
+    }
+
+    /// Wait for the thread to exit, up to `budget`. Returns whether it did.
+    pub fn join(mut self, budget: Duration) -> bool {
+        self.finish();
+        let Some(handle) = self.handle.take() else {
+            return true;
+        };
+        let deadline = Instant::now() + budget;
+        while !handle.is_finished() {
+            if Instant::now() >= deadline {
+                tracing::error!(
+                    "recorder: the writer did not finish within {} s; leaving the payload mapped \
+                     rather than unmapping under a live thread",
+                    budget.as_secs()
+                );
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let _ = handle.join();
+        true
+    }
+}
+
+/// How many frames may wait for the writer before the render thread starts dropping. At full eye
+/// resolution each is around ten megabytes, so this is a bound on memory as much as latency.
+const QUEUE_DEPTH: usize = 6;
+
+/// How often the thread retries the host while waiting for the listener.
+const CONNECT_RETRY: Duration = Duration::from_millis(500);
+
+struct Shared {
+    connected: AtomicBool,
+    error: Mutex<Option<String>>,
+}
+
+struct WriterThread {
+    target: String,
+    frame_rate: u32,
+    folder: PathBuf,
+    sidecar: std::io::BufWriter<std::fs::File>,
+    stream: Option<TcpStream>,
+    header_written: bool,
+    /// The bytes of the last fresh frame, re-sent for duplicates.
+    last_fresh: Option<Vec<u8>>,
+    /// The next stream frame index: the frame number the video will have for the next write.
+    stream_frame: u32,
+    dropped_before_connect: u32,
+    pool: SyncSender<Vec<u8>>,
+    shared: Arc<Shared>,
+}
+
+/// One sidecar line.
+#[derive(Serialize)]
+struct SidecarLine<'a> {
+    stream_frame: u32,
+    capture_frame: u32,
+    duplicate: bool,
+    unix_ms: i64,
+    game_run_time_us: Option<u64>,
+    eye: usize,
+    predicted_display_time_ns: Option<i64>,
+    views: Option<[SidecarView<'a>; 2]>,
+}
+
+#[derive(Serialize)]
+struct SidecarView<'a> {
+    position: &'a [f32; 3],
+    orientation: &'a [f32; 4],
+    fov: &'a [f32; 4],
+}
+
+/// The stream parameters, written once the first frame fixes the size.
+#[derive(Serialize)]
+struct StreamInfo<'a> {
+    width: u32,
+    height: u32,
+    frame_rate: u32,
+    eye: usize,
+    pixel_format: &'a str,
+    color_space: &'a str,
+    color_range: &'a str,
+    target: &'a str,
+    started_unix_ms: i64,
+}
+
+impl WriterThread {
+    fn run(&mut self, receiver: Receiver<Frame>) {
+        let mut next_attempt = Instant::now();
+        for frame in receiver {
+            if self.stream.is_none() {
+                if Instant::now() >= next_attempt {
+                    self.try_connect();
+                    next_attempt = Instant::now() + CONNECT_RETRY;
+                }
+                if self.stream.is_none() {
+                    self.dropped_before_connect += 1;
+                    if let Frame::Fresh(buffer, _) = frame {
+                        let _ = self.pool.try_send(buffer);
+                    }
+                    continue;
+                }
+            }
+            if let Err(e) = self.write_frame(frame) {
+                let message = format!("{e:#}");
+                tracing::error!("recorder: writer: {message}");
+                *self.shared.error.lock() = Some(message);
+                self.shared.connected.store(false, Ordering::Relaxed);
+                self.stream = None;
+                // Drain the rest so the render thread's sends fail fast rather than block on a
+                // full queue, then leave.
+                break;
+            }
+        }
+        if let Some(mut stream) = self.stream.take() {
+            let _ = stream.flush();
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+        }
+        let _ = self.sidecar.flush();
+        self.shared.connected.store(false, Ordering::Relaxed);
+        if self.dropped_before_connect > 0 {
+            tracing::warn!(
+                "recorder: {} frames arrived before the host connected and were dropped",
+                self.dropped_before_connect
+            );
+        }
+        tracing::info!(
+            "recorder: writer finished, {} frames streamed to {}",
+            self.stream_frame,
+            self.target
+        );
+    }
+
+    fn try_connect(&mut self) {
+        match TcpStream::connect(&self.target) {
+            Ok(stream) => {
+                let _ = stream.set_nodelay(true);
+                tracing::info!("recorder: connected to {}", self.target);
+                self.stream = Some(stream);
+                self.shared.connected.store(true, Ordering::Relaxed);
+            }
+            Err(e) => {
+                tracing::debug!("recorder: waiting for the host at {}: {e}", self.target);
+            }
+        }
+    }
+
+    fn write_frame(&mut self, frame: Frame) -> anyhow::Result<()> {
+        // The bytes to send are held outside `self` for the duration so the header and sidecar
+        // writes below can borrow `self` freely; they go back into `last_fresh` at the end.
+        let (held, metadata, duplicate) = match frame {
+            Frame::Fresh(buffer, metadata) => {
+                if let Some(previous) = self.last_fresh.take() {
+                    let _ = self.pool.try_send(previous);
+                }
+                (buffer, metadata, false)
+            }
+            Frame::Duplicate(metadata) => match self.last_fresh.take() {
+                Some(bytes) => (bytes, metadata, true),
+                // Nothing to repeat yet (the ring is still priming): the stream simply starts a
+                // frame later.
+                None => return Ok(()),
+            },
+        };
+        let result = self.write_bytes(&held, &metadata, duplicate);
+        self.last_fresh = Some(held);
+        result
+    }
+
+    fn write_bytes(
+        &mut self,
+        bytes: &[u8],
+        metadata: &FrameMetadata,
+        duplicate: bool,
+    ) -> anyhow::Result<()> {
+        if !self.header_written {
+            let header = format!(
+                "YUV4MPEG2 W{} H{} F{}:1 Ip A1:1 C420jpeg XYSCSS=420JPEG XCOLORRANGE=LIMITED\n",
+                metadata.width, metadata.height, self.frame_rate
+            );
+            self.stream
+                .as_mut()
+                .context("no stream")?
+                .write_all(header.as_bytes())
+                .context("writing the stream header")?;
+            self.header_written = true;
+            self.write_stream_info(metadata);
+        }
+        let stream_frame = self.stream_frame;
+        let stream = self.stream.as_mut().context("no stream")?;
+        stream
+            .write_all(b"FRAME\n")
+            .and_then(|()| stream.write_all(bytes))
+            .with_context(|| format!("writing frame {stream_frame} to the host"))?;
+        self.write_sidecar_line(metadata, duplicate);
+        self.stream_frame += 1;
+        Ok(())
+    }
+
+    fn write_stream_info(&self, metadata: &FrameMetadata) {
+        let info = StreamInfo {
+            width: metadata.width,
+            height: metadata.height,
+            frame_rate: self.frame_rate,
+            eye: metadata.eye,
+            pixel_format: "yuv420p",
+            color_space: "bt709",
+            color_range: "limited",
+            target: &self.target,
+            started_unix_ms: metadata.unix_ms,
+        };
+        let path = self.folder.join("stream.json");
+        let result = serde_json::to_string_pretty(&info)
+            .map_err(std::io::Error::other)
+            .and_then(|json| std::fs::write(&path, json));
+        if let Err(e) = result {
+            tracing::warn!("recorder: could not write {}: {e}", path.display());
+        }
+    }
+
+    fn write_sidecar_line(&mut self, metadata: &FrameMetadata, duplicate: bool) {
+        let views = metadata.views.as_ref().map(|v| {
+            [0, 1].map(|eye| SidecarView {
+                position: &v.eyes[eye].position,
+                orientation: &v.eyes[eye].orientation,
+                fov: &v.eyes[eye].fov,
+            })
+        });
+        let line = SidecarLine {
+            stream_frame: self.stream_frame,
+            capture_frame: metadata.frame,
+            duplicate,
+            unix_ms: metadata.unix_ms,
+            game_run_time_us: metadata.game_run_time_us,
+            eye: metadata.eye,
+            predicted_display_time_ns: metadata.views.map(|v| v.predicted_display_time_ns),
+            views,
+        };
+        let result = serde_json::to_writer(&mut self.sidecar, &line)
+            .map_err(std::io::Error::other)
+            .and_then(|()| self.sidecar.write_all(b"\n"));
+        if let Err(e) = result {
+            tracing::warn!("recorder: could not append to the sidecar: {e}");
+        }
+    }
+}

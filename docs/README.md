@@ -37,6 +37,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [vr-runtime.md](mod/vr-runtime.md) — the OpenXR runtime as built: session lifecycle, the frame loop, pose model, per-eye resolution, mirror, and the playtest checklist.
 - [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, and cursor interaction.
 - [environment.md](mod/environment.md) — debug-UI control of time of day and weather.
+- [capture.md](mod/capture.md) — the in-process recorder: the GPU pack and readback ring, the y4m stream to the host encoder, the pose sidecar, and the reframe tool.
 - [trailer-tooling.md](mod/trailer-tooling.md) — directing tools and the in-process eye capture for the trailer: decisions and the working todo list.
 
 ### stereo/

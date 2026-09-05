@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use crate::{
     config, grapple, headpose,
     vr::{
-        Fov, FrameContext, FreezeMode, OffAxisProjection, VrConfig,
+        EyeView, Fov, FrameContext, FreezeMode, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
         pose_control::{self, pose_orientation, pose_position},
     },
@@ -60,6 +60,35 @@ static FROZEN_EYE_PARAMS: Mutex<Option<[EyeRenderParams; 2]>> = Mutex::new(None)
 /// rendering.
 static CULL_PROJECTION: Mutex<Option<Matrix4>> = Mutex::new(None);
 
+/// The located views of the frame in flight, as the recorder's sidecar wants them: the raw eye
+/// poses in LOCAL space, the eye fields of view, and the predicted display time. Published next to
+/// [`RENDER_PARAMS`] so the render thread can read them at the eye-capture point without the
+/// runtime lock. `None` when no VR frame is rendering.
+static CAPTURE_VIEWS: Mutex<Option<CaptureViews>> = Mutex::new(None);
+
+/// The per-frame view record the recorder stores per captured frame.
+#[derive(Copy, Clone, Debug)]
+pub struct CaptureViews {
+    /// The runtime's predicted display time for the frame, in the runtime's nanosecond clock.
+    pub predicted_display_time_ns: i64,
+    /// Per eye: the raw located pose (position, then orientation as `x, y, z, w`) in LOCAL space,
+    /// and the field of view as `left, right, up, down` angles in radians.
+    pub eyes: [CaptureEyeView; 2],
+}
+
+/// One eye's located view for the recorder's sidecar.
+#[derive(Copy, Clone, Debug)]
+pub struct CaptureEyeView {
+    pub position: [f32; 3],
+    pub orientation: [f32; 4],
+    pub fov: [f32; 4],
+}
+
+/// The located views for the frame in flight, or `None` when no VR frame is rendering.
+pub fn capture_views() -> Option<CaptureViews> {
+    *CAPTURE_VIEWS.lock()
+}
+
 /// The render parameters for `eye` (`0` = left, `1` = right) this frame, or `None` when no VR frame
 /// is rendering. Read by the `SetupRenderCamera` hook.
 pub fn render_params(eye: usize) -> Option<EyeRenderParams> {
@@ -80,6 +109,7 @@ pub fn cull_projection_standard() -> Option<Matrix4> {
 /// false).
 pub fn clear_render_params() {
     *RENDER_PARAMS.lock() = None;
+    *CAPTURE_VIEWS.lock() = None;
     *CULL_PROJECTION.lock() = None;
 }
 
@@ -285,6 +315,34 @@ pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
         }
     };
     *RENDER_PARAMS.lock() = Some(params);
+    // The recorder's sidecar wants the raw located views, not the rebased or frozen ones: they are
+    // what the submitted images were rendered for, so post can reproject against them exactly.
+    let capture_eye = |view: &EyeView| CaptureEyeView {
+        position: [
+            view.raw_pose.position.x,
+            view.raw_pose.position.y,
+            view.raw_pose.position.z,
+        ],
+        orientation: [
+            view.raw_pose.orientation.x,
+            view.raw_pose.orientation.y,
+            view.raw_pose.orientation.z,
+            view.raw_pose.orientation.w,
+        ],
+        fov: [
+            view.fov.angle_left,
+            view.fov.angle_right,
+            view.fov.angle_up,
+            view.fov.angle_down,
+        ],
+    };
+    *CAPTURE_VIEWS.lock() = Some(CaptureViews {
+        predicted_display_time_ns: frame.predicted_display_time().as_nanos(),
+        eyes: [
+            capture_eye(&frame.eye_view(0)),
+            capture_eye(&frame.eye_view(1)),
+        ],
+    });
 }
 
 /// Build a zero-shear (symmetric) off-axis projection that preserves the eye's horizontal and vertical

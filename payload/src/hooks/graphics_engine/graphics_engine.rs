@@ -329,6 +329,17 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 context.m_Context.CopyResource(dst, &src.m_Texture);
             }
 
+            // The in-process recorder: pack and read back the chosen eye's capture on the dispatch
+            // that refreshed it. A no-op unless recording.
+            if let Some(device) = graphics_engine.m_Device.as_ref() {
+                crate::recorder::capture_frame(
+                    &device.m_Device,
+                    &context.m_Context,
+                    &eye_textures,
+                    index,
+                );
+            }
+
             // Service an F12 screenshot request with a source that carries both eyes. Under
             // collapse the linear back buffer already holds the two eye-halves side by side; in
             // two-pass stereo it only holds the eye that just rendered, so the per-eye capture

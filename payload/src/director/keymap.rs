@@ -13,9 +13,9 @@ use std::path::PathBuf;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, VK_ADD, VK_CONTROL, VK_DECIMAL, VK_MENU, VK_MULTIPLY, VK_NUMPAD0, VK_NUMPAD1,
-    VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7, VK_NUMPAD8, VK_NUMPAD9,
-    VK_SHIFT, VK_SUBTRACT,
+    GetKeyState, VK_ADD, VK_CONTROL, VK_DECIMAL, VK_DIVIDE, VK_MENU, VK_MULTIPLY, VK_NUMPAD0,
+    VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5, VK_NUMPAD6, VK_NUMPAD7, VK_NUMPAD8,
+    VK_NUMPAD9, VK_SHIFT, VK_SUBTRACT,
 };
 
 use crate::{
@@ -40,6 +40,7 @@ pub enum Action {
     ToggleHeatLock,
     ClearHeat,
     Spawn,
+    ToggleRecording,
 }
 impl Action {
     /// A short label for the debug tab.
@@ -59,6 +60,7 @@ impl Action {
             Action::ToggleHeatLock => "Toggle heat lock",
             Action::ClearHeat => "Clear heat",
             Action::Spawn => "Spawn the configured tags",
+            Action::ToggleRecording => "Start or stop recording",
         }
     }
 }
@@ -174,6 +176,10 @@ impl Keymap {
                     action: Action::SaveBookmark,
                     chord: Chord::plain(VK_DECIMAL.0),
                 },
+                Binding {
+                    action: Action::ToggleRecording,
+                    chord: Chord::plain(VK_DIVIDE.0),
+                },
             ],
         }
     }
@@ -257,6 +263,7 @@ pub fn run(action: Action) {
         }
         Action::ClearHeat => heat::clear(),
         Action::Spawn => spawn::request(),
+        Action::ToggleRecording => crate::recorder::toggle(),
     }
 }
 
@@ -327,6 +334,7 @@ fn key_name(key: u16) -> String {
         k if k == VK_SUBTRACT.0 => "Numpad-".to_owned(),
         k if k == VK_MULTIPLY.0 => "Numpad*".to_owned(),
         k if k == VK_DECIMAL.0 => "Numpad.".to_owned(),
+        k if k == VK_DIVIDE.0 => "Numpad/".to_owned(),
         k if (0x70..=0x87).contains(&k) => format!("F{}", k - 0x6F),
         k if k < 0x80
             && (char::from(k as u8).is_ascii_digit()

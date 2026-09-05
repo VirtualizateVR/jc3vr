@@ -29,13 +29,13 @@ Tools for directing and capturing a first-person trailer from inside the headset
 
 ### Capture
 
-- [ ] Frame source: after both eyes are captured, copy the chosen eye into a ring of three staging textures and map them a few frames late, so the immediate context never stalls. The screenshot module's notes on the render-thread critical section apply.
-- [ ] GPU conversion: a pixel shader that writes the eye as NV12 (or a planar format ffmpeg reads directly) before the readback, so the bytes crossing the readback and the socket are a third of BGRA. Compiled with `shadergen` like the other payload shaders.
-- [ ] Transport: a loopback TCP connection from the payload to a host-side listener. Wine cannot sensibly spawn a host process, so a script on the host starts ffmpeg listening and the payload connects. Frame header carries the frame index, the wallclock, and the game-time timestamp.
-- [ ] Host script: ffmpeg reading raw frames from the socket, encoding with the hardware encoder available, segmenting at 10 minutes, and recording audio from the game's pipewire stream into the same segments. Emits a start marker both sides log for sync.
-- [ ] Pose sidecar: per frame, the HMD pose, the per-eye projection (tangents), and the eye resolution, written alongside the video so post can crop, adjust FOV, and stabilise from ground truth.
-- [ ] Debug menu and hotkey: start and stop recording, which eye, current segment and dropped-frame count, and an indicator visible in the headset.
-- [ ] Post tool: a small host tool that takes a segment plus its sidecar and produces a cropped, FOV-adjusted, optionally stabilised flat video. Can be an ffmpeg filter chain driven from the sidecar or a tiny standalone program; decide when the sidecar format exists.
+- [x] Frame source: the chosen eye's capture packed on the GPU and copied into a ring of three staging textures, the oldest mapped with the no-wait flag two frames later, so the immediate context never stalls. A refused map repeats the previous frame.
+- [x] GPU conversion: `i420_pack_ps` writes planar 4:2:0 YUV (BT.709, limited range) into one `R8` target whose rows are the frame's exact byte layout, compiled with `shadergen`.
+- [x] Transport: a loopback TCP connection from a writer thread to the host listener, carrying `yuv4mpegpipe` (self-describing, so the host needs no dimensions). The per-frame index, wallclock, and game time go to the sidecar rather than into the stream, which keeps the stream a plain ffmpeg input.
+- [x] Host script: `scripts/capture_host.sh` listens, encodes with the first hardware H.264 encoder ffmpeg reports, segments at ten minutes, and records the default sink's monitor with wall-clock timestamps on both inputs. Untested against a live stream so far.
+- [x] Pose sidecar: `frames.jsonl` with the stream frame, the raw located pose and field of view of both eyes, the predicted display time, the wallclock, and the game time, plus `stream.json` with the stream parameters.
+- [x] Debug menu and hotkey: the Director tab's Recording section (start, stop, eye, scale, rate, host, and the sent, repeated, and dropped counts) and a hotkey. The indicator is the tab itself; a headset-visible indicator outside the panel is still to do.
+- [x] Post tool: `tools/capture/reframe.py` crops to a chosen field of view about the optical axis and stabilises the rotation from the sidecar by a per-frame homography (numpy and OpenCV). The projection math is checked; the tool has not yet run on real footage.
 - [ ] Audio fallback, only if host-side audio fails: an FMOD capture DSP on the master channel group streaming PCM with the video's timestamps. FMOD Studio is the game's audio engine (`fmod_studio_F.dll`).
 
 ## Shot list this serves

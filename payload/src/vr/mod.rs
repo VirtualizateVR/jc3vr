@@ -38,8 +38,8 @@ pub use config::{
     ProjectionConvention, VrConfig,
 };
 pub use frame::{
-    EyeRenderParams, begin_render_frame, clear_render_params, cull_projection_standard,
-    render_params,
+    CaptureEyeView, CaptureViews, EyeRenderParams, begin_render_frame, capture_views,
+    clear_render_params, cull_projection_standard, render_params,
 };
 use openxr as xr;
 pub use projection::{Fov, OffAxisProjection};
