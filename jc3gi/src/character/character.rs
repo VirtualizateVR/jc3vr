@@ -214,7 +214,15 @@ pub struct Character {
     /// The character's embedded [`ObjectBlackboard`](crate::blackboard::ObjectBlackboard) (`lea rcx, [character+2060h]` at every
     /// blackboard call site in the loco tasks).
     pub m_Blackboard: crate::blackboard::ObjectBlackboard,
-    _field_2090: [u8; 97],
+    _field_2090: [u8; 89],
+    /// Packed damage-state bit-flags; see [`DamageStateFlags`](crate::character::character::DamageStateFlags).
+    pub m_DamageFlags: crate::character::character::DamageStateFlags,
+    _field_20ea: [u8; 6],
+    /// Whether the character's weapons draw ammunition without consuming it. Read by
+    /// `CWeaponBase::HasUnlimitedAmmo` together with the non-player and challenge-island rules.
+    /// Set through [`SetUnlimitedAmmo`](crate::character::character::Character::SetUnlimitedAmmo), which also refreshes the HUD's
+    /// weapon readout for the player.
+    pub m_UnlimitedAmmo: bool,
     /// Packed aiming-state bit-flags; see [`AimState`](crate::character::character::AimState).
     pub m_AimFlags: crate::character::character::AimState,
     _field_20f2: [u8; 930],
@@ -232,7 +240,11 @@ pub struct Character {
     _field_278d: [u8; 99],
     pub m_WorldMatrixT0: crate::types::math::Matrix4,
     pub m_WorldMatrixT1: crate::types::math::Matrix4,
-    _field_2870: [u8; 400],
+    _field_2870: [u8; 352],
+    /// Whether this character is a player character (local or remote). Gates the player-only
+    /// side effects of setters such as [`SetUnlimitedAmmo`](crate::character::character::Character::SetUnlimitedAmmo).
+    pub m_IsPlayer: bool,
+    _field_29d1: [u8; 47],
     /// The weapon-aim countdown timer, in seconds. It is refreshed while an aim input is held and
     /// decremented by the frame delta otherwise; a positive value keeps
     /// [`m_AimingWeapon`](crate::character::character::AimState::m_AimingWeapon) set in [`m_AimFlags`](crate::character::character::Character::m_AimFlags),
@@ -294,6 +306,29 @@ impl Character {
                 Self::GetHeadPosition_ADDRESS,
             );
             f(self as *const Self as _, position)
+        }
+    }
+    pub const SetUnlimitedAmmo_ADDRESS: usize = 0x1407B14B0;
+    /// Sets [`m_UnlimitedAmmo`](crate::character::character::Character::m_UnlimitedAmmo). For the locally controlled player, a
+    /// change also re-selects the current weapon on the HUD so its ammo readout updates.
+    pub unsafe fn SetUnlimitedAmmo(&mut self, unlimited: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, unlimited: bool) = ::std::mem::transmute(
+                Self::SetUnlimitedAmmo_ADDRESS,
+            );
+            f(self as *mut Self as _, unlimited)
+        }
+    }
+    pub const SetGodMode_ADDRESS: usize = 0x1407FD7C0;
+    /// Sets the [`GOD_MODE`](crate::character::character::DamageStateFlags::GOD_MODE) damage flag and the damageable's
+    /// invulnerability. Enabling it on a living character also restores full health, forces the
+    /// neutral animation state, and notifies the network component.
+    pub unsafe fn SetGodMode(&mut self, enabled: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, enabled: bool) = ::std::mem::transmute(
+                Self::SetGodMode_ADDRESS,
+            );
+            f(self as *mut Self as _, enabled)
         }
     }
     pub const GetGrapplingHook_ADDRESS: usize = 0x140760830;
@@ -464,6 +499,19 @@ pub unsafe fn get_Character_EnableLocoStrafing() -> &'static mut bool {
 }
 pub unsafe fn get_Character_GoreEnabled() -> &'static mut bool {
     unsafe { &mut *(0x142F2F301 as *mut bool) }
+}
+crate::__bitflags! {
+    #[doc =
+    " Per-character damage-handling bit-flags. Only the god-mode bit is mapped; the others cover the"]
+    #[doc =
+    " related invulnerability variants (`m_JesusMode` and the sequence-scoped god mode among them)."]
+    pub struct DamageStateFlags : u8 { const GOD_MODE = 2usize as _; }
+}
+fn _DamageStateFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], DamageStateFlags>([0u8; 0x1]);
+    }
+    unreachable!()
 }
 #[derive(Copy, Clone, Default)]
 #[repr(C, align(16))]
