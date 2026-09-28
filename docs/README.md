@@ -1,6 +1,6 @@
 # Documentation index
 
-Three kinds of document live here. `engine/` is reverse-engineered ground truth about Just Cause 3 as it is — release addresses, layouts, and lifecycles, independent of what the mod does with them. `mod/` is what we build: design decisions and shipped implementation. `issues/` holds issue-scoped investigations that closed a specific question. [`roadmap.md`](roadmap.md) tracks where the project is going.
+Three kinds of document live here. `engine/` is reverse-engineered ground truth about Just Cause 3 as it is — addresses, layouts, and lifecycles, independent of what the mod does with them. `mod/` is what we build: design decisions and shipped implementation. `issues/` holds issue-scoped investigations that closed a specific question. [`roadmap.md`](roadmap.md) tracks where the project is going.
 
 One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md) documents both the engine's frame pipeline and the mod's stereo driver against it — its section numbers (`rendering §N`) are load-bearing anchors referenced throughout the code and docs, so it stays whole.
 
@@ -10,26 +10,27 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [rendering.md](engine/rendering/rendering.md) — the frame pipeline: camera and projection (§2), buffers, the depth-reconstruction passes, the draw entry points and how shaders address the screen (§4), present and `BLOCK_FLIP` (§7), device and context (§8), resolution and render setups (§9), the stereo double-Draw machinery (§11–13).
 - [lighting-shadow-pipeline.md](engine/rendering/lighting-shadow-pipeline.md) — the per-frame sun-shadow and global-lighting state: the frame counters, cascade fit and amortization, the clustered froxel light grid and its consumers (§4), `SetGlobalShaderConstants`, and the table of which GlobalConstants are parity- or counter-indexed (the flicker ping-pong surface).
-- [shaders.md](engine/rendering/shaders.md) — extracting, disassembling, and patching the game's shaders; tooling in `tools/shaders/`.
+- [shaders.md](engine/rendering/shaders.md) — extracting, naming, and disassembling the game's shaders, how the engine creates and reloads them, the DXBC container checksum, and the screen-pixel PCF rotation hash in the sun-shadow resolve; tooling in `tools/shaders/`.
 - [render-setups-reinit.md](engine/rendering/render-setups-reinit.md) — the runtime resize path: `CreateRenderSetups`, its callers, what `ApplyResize` and `DestroyRenderSetups` touch, and how far the swapchain is separable from the scene targets.
 - [model-culling.md](engine/rendering/model-culling.md) — the two model visibility gates: the instance-level BFBC cull, and the per-render-block frustum cull against the active camera that pops buildings at a widened view's edge.
 
 ### performance/
 
-- [profiling.md](engine/performance/profiling.md) — what survives of the engine's profiler in release, and the recommended path to per-phase CPU/GPU timings.
+- [profiling.md](engine/performance/profiling.md) — the engine's timing systems: which are live and which are compiled out on the CPU and GPU sides, and the per-pass structure of the frame.
 
 ### character/
 
 - [skeleton.md](engine/character/skeleton.md) — the Havok pose store, the model-space Joint API, frame ordering, and where to override bones.
 - [humanik.md](engine/character/humanik.md) — the HumanIK solver: layout, per-frame lifecycle, effector ids, and the external-target injection recipe.
-- [hands-and-roomscale.md](engine/character/hands-and-roomscale.md) — weapon-to-hand attachment, the shipped per-arm aim IK, and the character's velocity-driven collision proxy.
+- [hands-locomotion-and-state.md](engine/character/hands-locomotion-and-state.md) — the weapon-to-hand attach chain, the per-arm aim IK, root motion and the collision proxy, scene queries, teleport signals, the vehicle seat attach, the proxy capsule and pause, and the per-tick character state signals.
 
 ### gameplay/
 
-- [input.md](engine/gameplay/input.md) — the action effector system, action ids, the write API, the semantic button-mapping layer, and the mouse/UI pipeline.
+- [input.md](engine/gameplay/input.md) — the action effector system, the action enumeration, the write API, the semantic button-mapping layer, and the mouse/UI pipeline.
+- [aim-state.md](engine/gameplay/aim-state.md) — the player's aim state: its writers, every consumer, fire gating independent of it, the relaxed and aimed body families, the combat mental state, and the other on-foot stance switches.
 - [aim-pipeline.md](engine/gameplay/aim-pipeline.md) — how the player aims and fires: the per-consumer aim target cache, shot construction, dual-wield, auto-aim, and the camera getters.
 - [grapple-pipeline.md](engine/gameplay/grapple-pipeline.md) — grapple targeting, hook flight and attach, and the zip/tether/retract dispatch.
-- [swim-locomotion.md](engine/gameplay/swim-locomotion.md) — the swim state-task family: act-quantized turn dispatch (120° clips past 65°), the two heading paths (animated-turn slerp vs continuous `DoRotate`), the swimming capsule offsets that make `SetOrientation` receive a pitched frame, and why none of the on-foot orientation machinery applies in water.
+- [swim-locomotion.md](engine/gameplay/swim-locomotion.md) — the swim state-task family: act-quantized turn dispatch (fixed-angle turn clips past a threshold angle), the two heading paths (animated-turn slerp vs continuous `DoRotate`), the swimming capsule offsets that make `SetOrientation` receive a pitched frame, and why none of the on-foot orientation machinery applies in water.
 - [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md) — the parachute state task and steering core, and how the camera input matrix is mixed into the chute's steering through the look-steer block.
 
 ## mod/
@@ -47,11 +48,13 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [far-field.md](mod/stereo/far-field.md) — the monoscopic far field (issue #32): identifying the far-regime scene work and sharing it between eyes.
 - [foveation.md](mod/stereo/foveation.md) — static foveated rendering (issue #29): the stencil radial-density-masking design, the depth-stencil-state seam, and the build plan.
 - [swapchain-ownership.md](mod/stereo/swapchain-ownership.md) — the mod-owned back buffer: substituting the engine's swapchain-derived render setups so the scene renders per-eye while the DXGI buffers stay at the window size.
+- [culling.md](mod/stereo/culling.md) — widening the engine's visibility culls to the binocular union: the union cull projection, the scene cull and its size and occlusion corrections, the spawn and character-occlusion frusta, the per-render-block frustum cull, and terrain.
 - [lighting-shadow-vr-interactions.md](mod/stereo/lighting-shadow-vr-interactions.md) — every default-on mod modification touching camera, frame counters, lighting, or shadows, how each interacts with the stereo double-draw, and the candidate per-frame globals behind the terrain-wide sun-shadow flicker.
 
 ### rendering/
 
 - [fsr.md](mod/rendering/fsr.md) — FSR anti-aliasing and upscaling in the stereo pipeline.
+- [shader-patching.md](mod/rendering/shader-patching.md) — patching the game's shaders in memory at creation: the create hooks, the DXBC checksum refresh, the forced reload through `LoadShaderBundle`, the restore on eject, the sun-shadow PCF hash patch (issue #10), and the LOD dissolve patch.
 - [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md) — Intel XeSS assessed against the shipped FSR2 as anti-aliasing and as a VR upscaler: the Arc-only D3D11 backend, the D3D11on12 route that does work and what it costs, XeSS's sub-rectangle API against the eye seam, and why the recommendation is still to finish FSR2 and validate foveation.
 
 ### performance/

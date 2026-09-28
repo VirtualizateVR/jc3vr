@@ -79,12 +79,7 @@ reuses that machinery, at a modest pixel-density cost.
 
 ### Implementation notes
 
-- **Injection point**: the composite splits the G-buffer `DrawRenderPassRange` at
-  `RP_ROAD_STENCIL` (0x35) — after `RP_CLEAR` (0x34) and the Z-prepass prefix. The depth merge
-  with the near dispatch's own prepass is fixed-function (`GREATER_EQUAL` + depth write under
-  reverse-Z), so far content lands only where nothing nearer claimed the pixel, and equal depths
-  (a far model prepassed by both dispatches — the Z passes are not windowed) take the far
-  G-buffer content.
+- Injection point: the composite splits the G-buffer `DrawRenderPassRange` at [`RenderPassId::RP_ROAD_STENCIL`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_ROAD_STENCIL), the pass after [`RenderPassId::RP_CLEAR`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_CLEAR) and the Z-prepass prefix. The depth merge with the near dispatch's own prepass is fixed-function (`GREATER_EQUAL` + depth write under reverse-Z), so far content lands only where nothing nearer claimed the pixel. Equal depths take the far G-buffer content; they occur where both dispatches prepass a far model, because the Z passes are not windowed.
 - **Capture**: after the far dispatch's G-buffer range completes, MainDepth + GBuffer0..3 are
   copied into the share pipeline's textures (the depth copy is typeless-family with a
   depth-readable SRV).

@@ -36,7 +36,7 @@ The VR source publishes through `headpose::set_pose_no_interp`, writing the same
 
 `projection.rs` turns the four `XrFovf` half-angles into an off-axis (asymmetric-frustum) projection in the engine's row-major, row-vector layout (rendering §2.6), in two depth conventions, both host-unit-tested. The camera hook writes the projection into `m_Projection` on the render camera; the frame loop supplies the world-space eye offset alongside it.
 
-The off-axis matrix is built element-for-element the way the engine's `CMatrix4f::PerspectiveOffCenter` builds `Camera::m_Projection` — verified against the release build (rendering §2.9) — and fed the engine's own default near/far (`0.1` / `38400`, the `Camera` constructor values). The `38400` far is the tell that matters: the game renders a finite-far reverse-Z frustum out to ~38 km, so an earlier `4000` far default would have clipped the horizon at 4 km; the mod now matches the engine's frustum.
+The off-axis matrix is built element-for-element the way the engine's `CMatrix4f::PerspectiveOffCenter` builds `Camera::m_Projection` — verified (rendering §2.9) — and fed the engine's own default near and far planes ([`Camera::DEFAULT_NEAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_NEAR_PLANE) / [`Camera::DEFAULT_FAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_FAR_PLANE), the `Camera` constructor values). The far plane is the tell that matters: the game renders a finite-far reverse-Z frustum out to ~38 km, so an earlier `4000` far default would have clipped the horizon at 4 km; the mod now matches the engine's frustum.
 
 The depth convention is settled but kept switchable as a headset escape hatch:
 
@@ -72,7 +72,7 @@ All under `vr.*` (`payload/src/vr/config.rs`):
 - `retry_interval_secs` — bring-up retry cadence after a failure.
 - `world_scale` — metres of head/IPD motion per engine unit (`1.0` = 1:1).
 - `loader_path` — override for the OpenXR loader DLL.
-- `near_clip` / `far_clip` — the per-eye projection clip planes, in metres. Default to the engine's own `Camera` constructor values (`0.1` / `38400`, rendering §2.9) so the frustum matches the game and the ~38 km horizon does not clip.
+- `near_clip` / `far_clip` — the per-eye projection clip planes, in metres. Default to the engine's own `Camera` constructor values ([`Camera::DEFAULT_NEAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_NEAR_PLANE) / [`Camera::DEFAULT_FAR_PLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera::DEFAULT_FAR_PLANE), rendering §2.9) so the frustum matches the game and the ~38 km horizon does not clip.
 - `projection_convention` — `EnginePreReverseZ` (default) or `ManualReverseZ` (see above).
 - `blit_srgb_gamma` — `Linearize` (default) or `Passthrough` (see above).
 - `native_resolution` — render each eye at the HMD-recommended resolution (default on; auto-disables on a resize fault).

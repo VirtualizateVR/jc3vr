@@ -322,7 +322,7 @@ const SPLIT_PASSES: &[i16] = &[
 /// The `IsEnabled` replacement for the gated far-regime types: report disabled exactly when the
 /// far-field mode is skipping the far field for the current dispatch's eye. `CRenderPass::DoDraw`
 /// dispatches this per type run, so the gate follows the eye and the live config without any
-/// repatching. (The stock release implementation compiles to a constant `true`.)
+/// repatching. (The stock implementation compiles to a constant `true`.)
 unsafe extern "system" fn far_gated_type_is_enabled(_this: *mut ::core::ffi::c_void) -> bool {
     let (enabled, mode) = Config::lock_query(|c| (c.far_field.enabled, c.far_field.mode));
     let skipping = enabled

@@ -19,17 +19,11 @@ the vehicle mesh with no view of the road, obstacles, or enemies.
 
 ### IsInDrivingVehicleState
 
-`CCharacter::IsInDrivingVehicleState` (release `0x140_77E_AF0`) checks the
-player's animation state machine: it returns true if the current state hash
-matches one of the driver-vehicle states (`S_IDLE_DRIVER_VEHICLE`,
-`S_FORWARD_TO_REVERSE_DRIVER_VEHICLE`, `S_REVERSE_TO_FORWARD_DRIVER_VEHICLE`,
-`S_REVERSE_DRIVER_VEHICLE`), or if the `m_UserVM.m_CurrentStateBitFlags[1] &
-0x2000000000` flag is set.
+[`Character::IsInDrivingVehicleState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInDrivingVehicleState) checks the player's animation state machine: it returns true if the current state hash matches one of the driver-vehicle states (`S_IDLE_DRIVER_VEHICLE`, `S_FORWARD_TO_REVERSE_DRIVER_VEHICLE`, `S_REVERSE_TO_FORWARD_DRIVER_VEHICLE`, `S_REVERSE_DRIVER_VEHICLE`), or if the state bit [`StateBitFlag::SB_IS_RIDING_MOTORBIKE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/state::StateBitFlag##variant-SB_IS_RIDING_MOTORBIKE) is set in [`UserVM::m_CurrentStateBitFlags1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::control_parameters::UserVM##field-m_CurrentStateBitFlags1).
 
 ### PushRenderContext and the vehicle bypass
 
-`CGameCameraManager::PushRenderContext` (dump address
-`0x140_A88_730`) is where the gameplay camera's world transform is pushed to
+[`GameCameraManager::PushRenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::game_camera_manager::GameCameraManager##func-PushRenderContext) is where the gameplay camera's world transform is pushed to
 the engine camera. It has an `IsInDrivingVehicleState` branch:
 
 ```c
@@ -59,15 +53,7 @@ in third-person.
 
 ### The vehicle camera modifier
 
-`CGenericVehicleModifier` (dump: `CGenericVehicleModifier.cpp`) is the camera
-modifier for all generic vehicles. It has three camera states
-(`EVehicleCameraState`):
-
-```
-eDRIVING_CAMERA    = 0  (cars, trucks, tanks)
-ePLANE_CAMERA      = 1
-eHELICOPTER_CAMERA = 2
-```
+[`GenericVehicleModifier`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::generic_vehicle_modifier::GenericVehicleModifier) (`CGenericVehicleModifier`) is the camera modifier for all generic vehicles. It has three camera states ([`VehicleCameraState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::generic_vehicle_modifier::VehicleCameraState)): [`eDRIVING_CAMERA`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::generic_vehicle_modifier::VehicleCameraState##variant-eDRIVING_CAMERA) (cars, trucks, and tanks), [`ePLANE_CAMERA`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::generic_vehicle_modifier::VehicleCameraState##variant-ePLANE_CAMERA), and [`eHELICOPTER_CAMERA`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::generic_vehicle_modifier::VehicleCameraState##variant-eHELICOPTER_CAMERA).
 
 The modifier holds the camera's position (`m_Position`), look-at offset
 (`m_LookAtOffset`), follow distance (`m_FollowDistance`), and a look stick
@@ -84,19 +70,9 @@ open vehicles, but inside the mesh for enclosed ones.
 
 ### EVehicleType
 
-`NVehicle::EVehicleType` (`NVehicle/EVehicleType.h`) classifies vehicles:
+[`VehicleType`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType) (`NVehicle::EVehicleType`, from `NVehicle/EVehicleType.h`) classifies vehicles as [`ECAR`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType##variant-ECAR), [`EHELICOPTER`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType##variant-EHELICOPTER), [`EBOAT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType##variant-EBOAT), [`EAIRPLANE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType##variant-EAIRPLANE), [`EMOTORCYCLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType##variant-EMOTORCYCLE), [`ESUB`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType##variant-ESUB), or [`ETRAIN`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::VehicleType##variant-ETRAIN).
 
-```
-ECAR        = 0
-EHELICOPTER = 1
-EBOAT       = 2
-EAIRPLANE   = 3
-EMOTORCYCLE = 4
-ESUB        = 5
-ETRAIN      = 6
-```
-
-This is stored on `CVehicle::m_VehicleType` (offset 39 in `CVehicle.h`). It
+It is stored on `CVehicle::m_VehicleType`, a field of [`Vehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle) that is not yet located. It
 distinguishes broad categories but does not indicate whether a vehicle has an
 enclosed interior — a convertible car and an armoured truck are both `ECAR`.
 
@@ -143,8 +119,7 @@ into a texture, then display that texture on a surface inside the cockpit.
 
 #### The ExternalRenderCamera mechanism
 
-The engine's `CRenderPass` has an `ExternalRenderCamera` field (confirmed in
-dump: `NGraphicsEngine.cpp`, line 139948):
+The engine's `CRenderPass` has an `ExternalRenderCamera` field (unconfirmed):
 
 ```c
 ExternalRenderCamera = this->ExternalRenderCamera;
@@ -184,7 +159,7 @@ scene* from a different camera position, we would need to either:
 
 3. **Render to a texture via a custom render setup.** Create a separate render
    target + render setup, set the external camera, and run
-   `DrawRenderPassRange` for the full pass range (`0x2F`–`0x96`). This is
+   [`RenderEngine::DrawRenderPassRange`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawRenderPassRange) for the full pass range, from [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS) to [`RenderPassId::RP_POSTEFFECTS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_POSTEFFECTS). This is
    essentially a third dispatch but scoped to the render pass range, not the
    whole `HandleDrawThreadTask`. The cost is a full scene render.
 
@@ -303,15 +278,6 @@ Option A (external camera render target) is a possible later enhancement for
 players who want to stay in first-person, but it requires the third-dispatch
 infrastructure and is a much larger engineering effort.
 
-## Key release addresses
+## Bindings
 
-`PushRenderContext`, `CRenderPass::SetRenderContextCamera`, and
-`CShadowManager::CommitRenderPassSettings` now live in pyxis-defs; consult the
-bindings for their addresses. The remaining symbol is not yet defined there:
-
-| Symbol | Release address |
-|---|---|
-| `CCharacter::IsInDrivingVehicleState` | `0x140_77E_AF0` |
-
-`CVehicle` (with `m_VehicleType`, `m_NameHash`, and `m_Name`) is not modelled
-in pyxis-defs yet; its layout is described in the prose above.
+The functions this research depends on are bound in the pyxis defs: [`Character::IsInDrivingVehicleState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInDrivingVehicleState), [`GameCameraManager::PushRenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::game_camera_manager::GameCameraManager##func-PushRenderContext), [`RenderPass::SetRenderContextCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetRenderContextCamera), and [`ShadowManager::CommitRenderPassSettings`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::ShadowManager##func-CommitRenderPassSettings). [`Vehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle) is partially bound; its `m_VehicleType`, `m_NameHash`, and `m_Name` fields are not yet located, and the prose above that describes them is unconfirmed.

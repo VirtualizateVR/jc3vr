@@ -1,6 +1,6 @@
 //! Relax the volumetric-patch terrain's two *view-dependent* hull culls for stereo (issue #40).
 //!
-//! The tessellated terrain (`CRenderBlockTerrainPatch` -- the terrain the retail world actually
+//! The tessellated terrain (`CRenderBlockTerrainPatch` -- the terrain the game world actually
 //! draws) discards whole patches inside its hull shader, from constants the type bakes once per frame
 //! per constant-buffer slot in
 //! [`SetupConstantBuffers`](jc3gi::graphics_engine::render_block::RenderBlockTypeTerrainPatch::SetupConstantBuffers):

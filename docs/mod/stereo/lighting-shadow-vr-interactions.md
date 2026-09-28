@@ -50,15 +50,15 @@ sharing one per-frame value, or does something advance/diverge across the two dr
 |---|---|---|---|---|
 | `stereo.enabled` = true | `game_update_render` | Drives `game.Draw` twice | n/a (the driver itself) | The whole point: everything below exists to make the two draws converge to one frame of state. |
 | `stereo.cameras` = true / VR per-eye offset | `setup_render_camera` (`hooks/camera.rs`) | `m_RenderCamera` `m_TransformF`/`m_View`/`m_Projection*`/`m_ViewProjection*`; publishes `STEREO_STATE.shadow_anchor_delta` and `vp_history.cur_eye[eye]` | Camera is rebuilt from scratch each dispatch by `SetupRenderCamera`, so no restore needed; `vp_history.rotate()` runs only on eye 0 (once per real frame). | Yes — per-eye divergence is *intended*; the camera is not shared state, it is rebuilt per eye. |
-| `restore_frame_counters` = true | `snapshot_frame_counters` / `restore_frame_counters` | `RenderFrameCounters { m_Counter, m_FrameIndex, m_RingIndex }` (`get_render_frame_counters`), advanced once per `Draw` prologue; `m_FrameIndex` drives TAA-jitter phase and shadow-atlas parity | Snapshot before eye 0, restore before eye 1. Net advance = 1 per real frame (eye 1 re-advances from the restored value). | Yes — the frame-counter *sequence* matches the base game (one tick per real frame), so `m_FrameIndex & 1` parity is **not** disturbed by the double-draw. |
-| `share_prepasses` = true (gated on `restore_frame_counters`) | `pre_draw` (`hooks/graphics_engine/render_pass.rs`) | On eye 1, clears `RenderPassState::m_Enabled` on the shared pre-pass categories (reflections `9..=18`, sun-shadow cascade atlas `22..=44`), re-enables after | Eye 1 skips these passes and reuses eye 0's persistent targets; passes re-enabled so next frame's eye 0 runs them | Yes — the shadow atlas is rendered **once per real frame** (eye 0 only), both eyes sample it. Requires the counter restore so both eyes agree on the atlas parity slot. |
+| `restore_frame_counters` = true | `snapshot_frame_counters` / `restore_frame_counters` | [`RenderFrameCounters`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderFrameCounters) `{ m_Counter, m_FrameIndex, m_RingIndex }` (`get_render_frame_counters`), advanced once per `Draw` prologue; `m_FrameIndex` drives TAA-jitter phase and shadow-atlas parity | Snapshot before eye 0, restore before eye 1. Net advance = 1 per real frame (eye 1 re-advances from the restored value). | Yes — the frame-counter *sequence* matches the base game (one tick per real frame), so the `m_FrameIndex` parity is **not** disturbed by the double-draw. |
+| `share_prepasses` = true (gated on `restore_frame_counters`) | `pre_draw` (`hooks/graphics_engine/render_pass.rs`) | On eye 1, clears [`RenderPassState::m_Enabled`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPassState##flag-m_Enabled) on the shared pre-pass categories (reflections [`PRE_RP_REFLECTION_PRE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-PRE_RP_REFLECTION_PRE) through [`PRE_RP_CLOUDSHADOWS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-PRE_RP_CLOUDSHADOWS), sun-shadow cascade atlas [`PRE_RP_STATIC_SHADOW_0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-PRE_RP_STATIC_SHADOW_0) through [`PRE_RP_WATER_DISPLACEMENT_PRE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-PRE_RP_WATER_DISPLACEMENT_PRE)), re-enables after | Eye 1 skips these passes and reuses eye 0's persistent targets; passes re-enabled so next frame's eye 0 runs them | Yes — the shadow atlas is rendered **once per real frame** (eye 0 only), both eyes sample it. Requires the counter restore so both eyes agree on the atlas parity slot. |
 | `fix_shadow_cascade_anchor` = true | `set_global_shader_constants` (`render_pass.rs`) | Adds `M * shadow_anchor_delta` to `RenderContext.m_ShadowCascades.m_Transform` translation before the constants stage | Per-eye by design: `shadow_anchor_delta` is set per dispatch by the camera hook and cleared each `SetupRenderCamera`; a zero delta is a no-op | Yes — this is a per-eye correction, not shared state; the transform is re-staged fresh each dispatch. |
 | `widen_shadow_fit` = true | `shadow_manager_update_render` (`render_pass.rs`) | Widens active camera `m_ProjectionF` data[0]/data[5] to the union FOV around the fit | Scoped save/restore inside the *sim-side* once-per-frame call; restored before return | Yes — sim-side, once per frame, fully restored. |
 | `stabilize_shadow_fit` = true | `shadow_manager_update_render` | Horizontalizes active camera `m_TransformT1` row 2 (forward vector) for the fit | Scoped save/restore, sim-side, once per frame | Yes — fully restored. |
 | `force_ssao_first_pass` = true | `ssao_draw` (`hooks/graphics_engine/ssao.rs`) | Forces `SSAOPass.m_FirstPass` on each dispatch (skips the temporal history resolve) | Applied per dispatch; the pass clears it internally after its first apply | Yes — each eye computes AO fresh from its own depth; the shared 2-slot history is bypassed. |
-| `restore_ssao_history` = true | `snapshot_ssao_history` / `restore_ssao_history_indices` | `SSAOPass.m_PrevFrameIndex` / `m_CurrFrameIndex` (+0x9A0/+0x9A4), advanced once per SSAO draw | Snapshot before eye 0, restore before eye 1 | Yes — both eyes resolve against the same slot; net advance one per real frame. (The shipped `Default` is `true`; the field doc-comment saying "default off" is stale.) |
+| `restore_ssao_history` = true | `snapshot_ssao_history` / `restore_ssao_history_indices` | [`SSAOPass::m_PrevFrameIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::ssao::SSAOPass##field-m_PrevFrameIndex) / [`SSAOPass::m_CurrFrameIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::ssao::SSAOPass##field-m_CurrFrameIndex), advanced once per SSAO draw | Snapshot before eye 0, restore before eye 1 | Yes — both eyes resolve against the same slot; net advance one per real frame. (The shipped `Default` is `true`; the field doc-comment saying "default off" is stale.) |
 | `restore_gi_cascade` = true | `snapshot_gi_cascade` / `restore_gi_cascade_index` | `GISolver.m_CascadeToUpdate` (via `LightManager -> m_GIPass -> m_pGISolver`) — which LPV cascade refreshes this draw | Snapshot before eye 0, restore before eye 1 | Yes between the eyes — eye 1 refreshes the same cascade as eye 0. **But** which cascade is fresh still alternates once per real frame (inherent engine cadence); see candidate F. (Shipped `Default` is `true`; the field doc-comment is stale.) |
-| `EffectInfo` restore (unconditional) | `snapshot_effect_info` / `restore_effect_info` (`game.rs`) | `GraphicsEngine.m_EffectInfo[0..5].m_FrameIndex` and `m_EffectInfoIndex` — the reflection-proxy depth-history lifecycle, advanced once per scene dispatch | Snapshot before eye 0, restore before eye 1 (not config-gated) | Yes — advances once per real frame; without it water reflections flicker. |
+| `EffectInfo` restore (unconditional) | `snapshot_effect_info` / `restore_effect_info` (`game.rs`) | the `m_FrameIndex` of every [`GraphicsEngine::m_EffectInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_EffectInfo) entry and [`GraphicsEngine::m_EffectInfoIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_EffectInfoIndex) — the reflection-proxy depth-history lifecycle, advanced once per scene dispatch | Snapshot before eye 0, restore before eye 1 (not config-gated) | Yes — advances once per real frame; without it water reflections flicker. |
 | Add/draw buffer parity (unconditional) | `*get_current_add_buffer()` save/restore (`game.rs`) | The current add-list pointer (`CKeep1000Frames` parity toggle) | Saved before eye 0's draw, restored before eye 1 | Yes — eye 1's `SaveRenderFrameData` zeroes the same add-list, removing eye 0's draw-time additions (SSAO/post blocks). |
 | `dedupe_post_block` = true | `render_block_post_effects_draw` (`hooks/graphics_engine/post_effects.rs`) | Gates `RenderBlockPostEffects::Draw` to once per dispatch via `WORLD_POST_BLOCK_RAN` (reset each dispatch by the driver) | Per-dispatch gate; the between-eye add-list restore cannot zero the *draw*-list entry `ApplyWorldFilters` enqueues, so eye 1 would otherwise run the whole post chain (and FSR) twice | Yes — the duplicate post-chain run (which double-steps FSR history and the post slot ring) is suppressed. |
 | `gate_eye1_dt` = true | `apply_world_filters` / `apply_global_filters` (`post_effects.rs`) | Zeroes `dt` on eye 1 for `ApplyWorldFilters` (world-fade accumulator) and `ApplyGlobalFilters` (screen-fade alpha, sun-direction / heat-haze accumulators) | Eye 1 passes `dt = 0`, so the dt-driven accumulators step once per real frame | Yes — dt accumulators advance once per real frame. |
@@ -77,8 +77,7 @@ These are relevant to the flicker hunt because several of them exist *precisely*
 otherwise-unrestored per-frame global, and they are **off** in the shipped config, so the state they
 would pin is left free-running:
 
-- `restore_cb_ring` = **false** — the `RenderEngine::m_ConstantBufferRingIndex` (+0x16C0) is **not**
-  rolled back (candidate A).
+- `restore_cb_ring` = false: the back-buffer copy ring index, [`RenderEngine::m_CurrBackBufferCopy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_CurrBackBufferCopy), is not rolled back (candidate A).
 - `sync_shadow_atlas` = **false** — the sun-shadow atlas parity double buffer is **not** synced
   (candidate B).
 - `shadow_update_every_frame` = **false** — the cascade update-pattern amortization is left in place
@@ -113,10 +112,7 @@ merely un-averages).
 
 ### B. Sun-shadow atlas parity double buffer — strongest symptom match
 
-- **State**: `ShadowManager::m_AtlasTexture` is a `Texture2DArray` split into two parity halves
-  (`m_SliceBase[0]` / `m_SliceBase[1]`). The engine renders the cascade atlas into the half selected
-  by `get_render_frame_counters().m_FrameIndex & 1` and the material shaders sample the *same-parity*
-  half. Parity flips every real frame.
+- State: [`ShadowManager::m_AtlasTexture`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::ShadowManager##field-m_AtlasTexture) is a `Texture2DArray` whose slices are split between the two frame parities. Each cascade's [`CascadeData::m_RenderPassSettings`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::CascadeData##field-m_RenderPassSettings) selects the slice it draws into for each parity. The engine renders the cascade atlas into the slices of the parity of [`RenderFrameCounters::m_FrameIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderFrameCounters##field-m_FrameIndex) (read through `get_render_frame_counters()`), and the material shaders sample the same-parity slices. Parity flips every real frame.
 - **Double-draw handling**: `restore_frame_counters` (on) keeps `m_FrameIndex` on one value for both
   eyes, and `share_prepasses` (on) renders the atlas **once per frame** (eye 0) — so *within a frame*
   both eyes are consistent. `sync_shadow_atlas` (which would copy the freshly-rendered half onto the
@@ -134,7 +130,7 @@ merely un-averages).
 
 ### C. Cascade update-pattern amortization — content churn feeding B
 
-- **State**: `ShadowManager::m_CascadeUpdateLevels[6]`. Cascade level L re-fits and re-renders only
+- **State**: [`ShadowManager::m_CascadeUpdateLevels`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::ShadowManager##field-m_CascadeUpdateLevels), one level per cascade. Cascade level L re-fits and re-renders only
   every `2^L` frames; between refreshes its fit is copied forward. The distant cascades therefore
   hold content rendered at *different frames* in the two atlas parity halves.
 - **Double-draw handling**: `shadow_update_every_frame` (which would zero the levels and force every
@@ -146,20 +142,11 @@ merely un-averages).
   the parity flip alternates between two halves whose distant-cascade content was rendered a few
   frames apart.
 
-### A. RenderEngine constant-buffer ring index — genuine double-draw double-step
+### A. RenderEngine back-buffer copy ring index — genuine double-draw double-step
 
-- **State**: `RenderEngine::m_ConstantBufferRingIndex` (+0x16C0), the per-`Draw` CB pool slot,
-  advanced once per `Draw`. It is **not** part of `RenderFrameCounters` and is **not** restored by
-  default (`restore_cb_ring` = false).
-- **Double-draw handling**: none — it advances **twice per real frame** instead of once, so the
-  CB-pool slot phase diverges from the base game. Any pass that reads a previous slot (reprojection /
-  previous-frame constants) selects a different slot per eye and per frame.
-- **Why it matches (partially)**: this is one of the few globals the double-draw *actively* perturbs
-  (base advances once/frame, the mod twice), so it is the best fit for "absent in the base game." Its
-  weakness as the shadow-specific culprit is that the sun-shadow cascade constants
-  (`m_ShadowCascades`) are re-staged fresh each `SetGlobalShaderConstants`, so they should not read a
-  stale slot — but any shadow-adjacent pass that does reproject through the ring would inherit the
-  double-step. Worth pinning as an A/B against the symptom.
+- State: [`RenderEngine::m_CurrBackBufferCopy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_CurrBackBufferCopy), the current slot of the ring of scene-colour copies ([`RenderEngine::m_BackBufferCopy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_BackBufferCopy)) that serves as the screen-space refraction source. The `GraphicsEngine::Draw` prologue advances it once per `Draw`. It is not part of `RenderFrameCounters` and is not restored by default (`restore_cb_ring` = false).
+- Double-draw handling: none. It advances twice per real frame instead of once, so the ring's slot phase diverges from the base game, and each eye's refraction reads a different scene-colour copy than the base game would.
+- Why it matches (partially): this is one of the few globals the double-draw actively perturbs (the base game advances it once per frame, the mod twice), so it is the best fit for "absent in the base game." It is a weak fit for a shadow-specific culprit, because the ring holds scene-colour copies for refraction and does not carry the sun-shadow cascade constants (`m_ShadowCascades`), which are re-staged fresh each `SetGlobalShaderConstants`. It is still worth pinning as an A/B against the symptom.
 
 ### E. Exposure histogram ping-pong — global brightness, not shadow-specific
 
@@ -205,7 +192,7 @@ merely un-averages).
 ## Summary for the cross-reference
 
 - The double-draw itself perturbs the base-game per-frame *sequence* of exactly one global by
-  default: **the CB ring index** (candidate A, advances twice/frame). Everything else the mod either
+  default: **the back-buffer copy ring index** (candidate A, advances twice/frame). Everything else the mod either
   restores between eyes (frame counters, SSAO, GI, EffectInfo, add-buffer) or renders once per frame
   (shared pre-passes / shadow atlas), so their per-frame *phase* matches the base game.
 - The likeliest source of a *terrain-wide sun-shadow* ping-pong is therefore not a double-draw

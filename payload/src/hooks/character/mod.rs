@@ -51,7 +51,7 @@ pub(crate) struct BodyIkStatus {
     /// things in each.
     pub mode: headpose::sim::HeadMode,
     /// The character's active animation rule-state id (`hashlittle(state_name)`), or `0` if the rule
-    /// system is not readable. The release build keeps only the hash, so this identifies the state
+    /// system is not readable. The game keeps only the hash, so this identifies the state
     /// without naming it: compare two captures, or hash a candidate name to confirm a guess.
     pub state_id: u32,
     pub head_effector: i32,
@@ -267,7 +267,7 @@ unsafe fn capture_anchors_and_queue_body_ik(character: *mut Character) {
         // solve happens later in this same function, and reading the head bone *after* the solve
         // would let the anchor chase the very target HIK pulls it toward — a feedback loop that pins
         // the camera to a fixed world point while the body walks out from under it. Reading here,
-        // before the solve, samples the freshly animated pose: the release decompile shows
+        // before the solve, samples the freshly animated pose: the decompile shows
         // AnimationController::GetJoint recomputes the model-space transform on demand when the bone
         // is dirty (CBlender::UpdateTime), and the animation graph finalized this frame's local pose
         // earlier in SIM, so this read reflects this frame's animation. At worst it is the previous

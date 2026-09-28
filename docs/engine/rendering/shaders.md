@@ -1,9 +1,8 @@
 # JC3 shaders: extraction, disassembly, and interpretation
 
-How to get at Just Cause 3's compiled shaders, turn them back into readable assembly, find the one you
-care about, and patch it from the mod. The tooling referenced here lives in
-[`tools/shaders/`](../../tools/shaders/). Reverse-engineered against the 2026 Denuvo-less Steam build;
-struct offsets and bundle layout are byte-stable across builds, only function addresses move.
+How to get at Just Cause 3's compiled shaders, turn them back into readable assembly, and find a
+specific one. The tooling referenced here lives in
+[`tools/shaders/`](../../../tools/shaders/).
 
 ## Where the shaders live
 
@@ -20,7 +19,7 @@ Each is an **ADF container** (Avalanche Data Format — magic `' FDA'` / `41 44 
 that packs one **DXBC** blob per shader permutation (~1550 in `Shaders_F`). `CSettingsManager::UpdateSettings`
 picks the bundle name (`"Shaders"`, `"ShadersLowShadows"`, `"ShadersConstMath"`,
 `"ShadersConstMathLowShadows"`; the `_F.shader_bundle` suffix is added internally) by shadow quality and
-GPU vendor, then calls `CGraphicsEngine::LoadShaderBundle`.
+GPU vendor, then calls `GraphicsEngine::LoadShaderBundle`.
 
 ## Extracting the DXBC
 
@@ -32,9 +31,8 @@ python3 tools/shaders/extract_dxbc.py "$HOME/.steam/steam/steamapps/common/Just 
 # -> Shaders_F.shaders/sh_0000_0003dac0.dxbc ...   (sh_<index>_<byte-offset-in-bundle>.dxbc)
 ```
 
-Repacking the bundle is **not** needed (and not implemented): the mod patches shaders in memory at
-load (see [the patch seam](#how-the-engine-creates-shaders-the-patch-seam)), so the on-disk bundles are
-left untouched.
+The tooling does not repack bundles. The engine's shader creation path, where bytecode can be
+substituted in memory, is described in [how the engine creates shaders](#how-the-engine-creates-shaders).
 
 ## Naming the blobs
 
@@ -132,8 +130,8 @@ Useful reflexes:
   GBuffers + depth; a forward material shader has `TEXCOORD` inputs and material textures. Shadow
   resolves bind `ShadowMapTexture` (`t14`) + `ShadowComparisonFilter` (`s15`) and emit
   `sample_c_lz_indexable ... t14 ... s15` taps.
-- **`v0.xy` is the screen pixel.** Any math seeded off `v0.xy` is screen-space, which in stereo means it
-  differs between the eyes (the same world point lands on a different pixel per eye).
+- **`v0.xy` is the screen pixel.** Any math seeded off `v0.xy` is screen-space. Its result depends
+  on the pixel a surface point projects to, so it changes with the view, not with the surface.
 - **Match the assembly to the engine pass** via the resource names: e.g. SSAO binds
   `DeinterleavedDepthTexture`; motion blur binds `VelocityTexture`/`NeighborMaxTexture`.
 
@@ -154,41 +152,32 @@ Then disassemble the candidates and confirm by their instructions. The engine-si
 pass/effect is called, what reads what) are in [`rendering.md`](rendering.md); follow a resource name
 there to the pass that binds it.
 
-## How the engine creates shaders (the patch seam)
+## How the engine creates shaders
 
-`Graphics::CreateFragmentProgram(device, params)` is the only caller of
-`ID3D11Device::CreatePixelShader`. `params` (`CreateFragmentProgramParams`, laid out in pyxis-defs) is
+[`Graphics::CreateFragmentProgram(device, params)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-CreateFragmentProgram) is the only caller of
+`ID3D11Device::CreatePixelShader`. `params` ([`CreateFragmentProgramParams`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::draw::CreateFragmentProgramParams)) is
 just the DXBC bytecode and its length. The returned `HFragmentProgram_t` holds only the
-`ID3D11PixelShader*`; **no DXBC is retained**. `CreatePixelShader` copies the bytecode, so a hook can
-substitute a patched copy that only has to outlive the call.
+`ID3D11PixelShader*`; **no DXBC is retained**. `CreatePixelShader` copies the bytecode, so the buffer
+`params` points at only has to outlive the call.
 
-The mod uses this to patch shaders in memory (`payload/src/hooks/graphics_engine/shader.rs`):
+[`GraphicsEngine::LoadShaderBundle(name)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-LoadShaderBundle) reloads a bundle and re-creates every shader holder through
+`CreateFragmentProgram`, but only if `name` differs from the current bundle name
+([`GraphicsEngine::m_CurrentBundleName`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_CurrentBundleName)). A change of shadow quality in the game's graphics
+menu selects the other bundle of the pair (see [where the shaders live](#where-the-shaders-live)), so
+it re-creates every shader through this path.
 
-1. **Hook `CreateFragmentProgram`** — scan `params.m_Code` for the target byte pattern; if present,
-   point `m_Code` at a patched copy for the duration of the call, then restore it. After editing the
-   bytecode, **recompute the DXBC container checksum** (a modified MD5 over everything past the 20-byte
-   header, stored at offset `0x4`) and write it back — the D3D stack under Proton validates it and
-   rejects a blob whose stored hash no longer matches, so a patch that skips this step silently fails to
-   create the shader. See `refresh_dxbc_checksum` / `dxbc_hash` in `shader.rs`.
-2. **Force a reload** — because injection happens after the game has built its shaders, the hook only
-   sees them when they are re-created. `CGraphicsEngine::LoadShaderBundle(name)` reloads a bundle (and
-   re-creates every shader holder through `CreateFragmentProgram`), but only if `name` differs from the
-   current (`m_CurrentBundleName`, laid out in pyxis-defs). The mod's "Reload shaders"
-   button bounces the active bundle to its other quality variant and back, which re-creates everything
-   through the hook. Changing shadow quality in the game's own graphics menu does the same.
+### The DXBC container checksum
 
-This means a shader fix is a **byte pattern + a patch**, applied live and reversibly, with the on-disk
-bundles never modified.
+A DXBC container stores a checksum at offset `0x4`: a modified MD5 over everything past the 20-byte
+header. The D3D stack under Proton validates it at shader creation and rejects a blob whose stored hash
+does not match, so the shader is not created. `D3DDisassemble` also rejects such a blob
+(`hr=0x80004005`). Any edit to the bytecode, in memory or on disk, requires recomputing the checksum
+and writing it back.
 
-## Case study: the per-eye shadow PCF rotation hash (issue #10)
+## The screen-pixel PCF rotation hash in the sun-shadow resolve
 
-A worked example of the whole loop, and the reasoning behind the shader patch the mod ships.
-
-**Symptom.** Sun shadows (and alpha-tested foliage) shimmer/grain differently between the two eyes in
-stereo.
-
-**Finding.** The opaque sun-shadow resolve (the ~159 material shaders that bind `ShadowMapTexture`)
-rotates its 38-tap Poisson PCF disk by a hash of the screen pixel:
+The opaque sun-shadow resolve (the ~159 material shaders that bind `ShadowMapTexture`) rotates its
+38-tap Poisson PCF disk by a hash of the screen pixel:
 
 ```
 dp2     r#.w, v0.xyxx, l(12.989800, 78.233002, 0, 0)   ; v0 = SV_Position (screen pixel)
@@ -198,29 +187,8 @@ frc     r#.w, r#.w                                       ; fract(sin(dot(pixel, 
 sincos  rot_sin, rot_cos, r#.w                           ; -> per-pixel PCF disk rotation
 ```
 
-The shadow *lookup* itself uses the interpolated world position, identical per eye, so the shadow's
-position and mean coverage match — only the per-pixel tap **noise** differs, because the same world
-point maps to a different pixel (hence a different rotation) in each eye. The constant `12.9898` occurs
-**only** in this instruction (159 sites per bundle), so it is an exact fingerprint.
-
-**Fix.** Zero the two seed constants (`12.9898`, `78.233`) in that `dp2`, i.e. patch the 16-byte
-immediate `39 d6 4f 41 4c 77 9c 42 00 00 00 00 00 00 00 00` to leading zeros. The dot product becomes
-0, the rotation a constant, and both eyes sample the same unrotated 38-tap disk — with 38 taps the look
-change is negligible. The mod does this in the `CreateFragmentProgram` hook above
-(`stereo.patch_shadow_pcf_hash`), applied via the "Reload shaders" button.
-
-> A raw byte-patch invalidates the DXBC container hash; `D3DDisassemble` rejects the blob
-> (`hr=0x80004005`), and — contrary to an earlier assumption that only the disassembler cares — the D3D
-> stack under Proton rejects it too: the patched shadow shaders fail to create and the scene renders
-> near-black with speckle. The mod therefore recomputes the checksum after patching
-> (`refresh_dxbc_checksum`), which makes the blob valid for every consumer; recomputing it on a blob you
-> patch on disk likewise makes `D3DDisassemble` accept it again.
-
-**What this does *not* explain.** A rotated disk changes the noise, not the mean, so it does not make a
-shadow uniformly stronger or longer in one eye. That residual is **inherent view-dependence** in
-screen-space AO (each eye computes SSAO fresh from its own depth, so near an occluder one eye sees more
-of it), not an accumulation bug — the sun-shadow map and its cascades are computed once per frame from
-the shared camera and are identical between eyes, and the one history-buffered darkening pass (SSAO
-temporal) is already gated per eye. A genuinely "shared" AO would need to reproject one eye's result to
-the other. See `payload/src/hooks/graphics_engine/{shader,ssao}.rs` and `payload/src/debug/rt_hash.rs`
-(the per-eye RT-hash diagnostic that confirms there is no cross-eye accumulator).
+The shadow lookup itself uses the interpolated world position. The rotation therefore changes only the
+per-pixel tap noise, not the shadow's position or mean coverage, and the noise pattern is fixed to the
+screen rather than to the surface. The constant `12.9898` occurs **only** in this instruction (159 sites
+per bundle), so it is an exact fingerprint. The `dp2` immediate encodes as the 16 bytes
+`39 d6 4f 41 4c 77 9c 42 00 00 00 00 00 00 00 00`.

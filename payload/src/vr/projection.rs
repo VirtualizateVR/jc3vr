@@ -13,8 +13,8 @@
 //! `to_cols_array()`) carries exactly the engine's layout, with no transpose needed.
 //!
 //! The `standard_depth` matrix is built element-for-element the way the engine's
-//! `CMatrix4f::PerspectiveOffCenter` builds `Camera::m_Projection` (verified against the release
-//! build, `docs/engine/rendering/rendering.md` §2.9): the engine passes near-plane extents (`near·tan θ`),
+//! `CMatrix4f::PerspectiveOffCenter` builds `Camera::m_Projection` (verified in
+//! `docs/engine/rendering/rendering.md` §2.9): the engine passes near-plane extents (`near·tan θ`),
 //! this module passes the tangents directly, and `near` cancels out of every term except the depth
 //! column, so the two matrices are identical. The engine's finite far plane defaults to
 //! [`Camera::DEFAULT_FAR_PLANE`](jc3gi::camera::camera::Camera::DEFAULT_FAR_PLANE) and near to

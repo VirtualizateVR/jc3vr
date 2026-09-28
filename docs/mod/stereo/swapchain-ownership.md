@@ -4,7 +4,7 @@ While a VR session runs, the engine renders into a texture the mod allocates rat
 
 Controlled by `vr.own_back_buffer` (default on). Implemented in `payload/src/vr/back_buffer.rs`, with two hooks in `payload/src/hooks/graphics_engine/graphics_engine.rs` and the transitions in `payload/src/vr/resolution.rs`.
 
-Addresses are release RVAs from the 2026 Denuvo-less Steam build. The engine-side behaviour this rests on is documented in [`render-setups-reinit.md`](../../engine/rendering/render-setups-reinit.md) and [`rendering.md`](../../engine/rendering/rendering.md); this document is the mod-side design.
+The engine-side behaviour this rests on is documented in [`render-setups-reinit.md`](../../engine/rendering/render-setups-reinit.md) and [`rendering.md`](../../engine/rendering/rendering.md); this document is the mod-side design.
 
 ## 1. Why
 
@@ -20,20 +20,20 @@ Substituting a mod-owned texture for the three swapchain-derived objects breaks 
 
 ## 2. The substitution set
 
-`Graphics::GetDeviceSurface(device, surface)` (`0x141_956_260`) is a two-line accessor returning `device + 8` for the `BACK_BUFFER` selector and null otherwise. It has **exactly one code cross-reference in the binary**, inside `CGraphicsEngine::CreateRenderSetups` — so the set of engine objects derived from the swapchain surface is closed, and it is three fields plus one mirror of a field.
+[`GetDeviceSurface(device, surface)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::device##func-GetDeviceSurface) is a two-line accessor returning the device's [`Device::m_BackBuffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::device::Device##field-m_BackBuffer) for the `BACK_BUFFER` selector and null otherwise. It has **exactly one code cross-reference in the binary**, inside [`GraphicsEngine::CreateRenderSetups`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-CreateRenderSetups) — so the set of engine objects derived from the swapchain surface is closed, and it is three fields plus one mirror of a field.
 
-The tail of `CreateRenderSetups` (`0x140_0CE_930`) builds them:
+The tail of `CreateRenderSetups` builds them:
 
-| Store | Engine offset | Built from |
-|---|---|---|
-| `m_BackBufferLinear` | `+0x1230` | `CreateSurfaceAlias` over `GetDeviceSurface(BACK_BUFFER)` at format `28` (`ABGR32`), name `"BackBufferLinear"` |
-| `m_PostEffectRenderSetup` | `+0x1238` | `CreateRenderSetup` with colour[0] = the raw device back-buffer surface, no depth |
-| `m_BackBufferRenderSetup` | `+0x1050` | `CreateRenderSetup` with colour[0] = `m_BackBufferLinear`, depth = `m_MainDepthSurface` (`+0x1060`) |
-| `m_RenderContext.m_RenderSetup` | `+0xEA0` | the same pointer as `+0x1050` |
+| Store | Built from |
+|---|---|
+| [`GraphicsEngine::m_BackBufferLinear`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_BackBufferLinear) | `CreateSurfaceAlias` over `GetDeviceSurface(BACK_BUFFER)` at format [`SurfaceFormat::ABGR32`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::SurfaceFormat##variant-ABGR32), name `"BackBufferLinear"` |
+| [`GraphicsEngine::m_PostEffectRenderSetup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_PostEffectRenderSetup) | `CreateRenderSetup` with colour[0] = the raw device back-buffer surface, no depth |
+| [`GraphicsEngine::m_BackBufferRenderSetup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_BackBufferRenderSetup) | `CreateRenderSetup` with colour[0] = `m_BackBufferLinear`, depth = [`GraphicsEngine::m_MainDepthSurface`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_MainDepthSurface) |
+| [`GraphicsEngine::m_RenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_RenderContext)`.`[`m_RenderSetup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_RenderSetup) | the same pointer as `m_BackBufferRenderSetup` |
 
-Their readers, established by grepping the symbol dump and confirming each against the release decompile:
+Their readers, each confirmed against the decompile:
 
-- **`m_BackBufferLinear`** — `CreateRenderSetups` (as the colour target of `m_BackBufferRenderSetup`); `DestroyRenderSetups`, which frees it with `Graphics::DestroySurface` and nulls it; `HandleDrawThreadTask` and `HandleScreenShot`, which pass it to `CGraphicsEngine::SaveScreen` on the screenshot paths; `CUIManager::InitPlatformRT`, which takes its RTV alongside `m_MainDepthSurface`'s DSV — the one the HUD redirect already displaces. `CGraphicsEngine::GetBackBufferLinear` is an accessor with no callers in either build.
+- **`m_BackBufferLinear`** — `CreateRenderSetups` (as the colour target of `m_BackBufferRenderSetup`); `DestroyRenderSetups`, which frees it with `Graphics::DestroySurface` and nulls it; `HandleDrawThreadTask` and `HandleScreenShot`, which pass it to `CGraphicsEngine::SaveScreen` on the screenshot paths; `CUIManager::InitPlatformRT`, which takes its RTV alongside `m_MainDepthSurface`'s DSV — the one the HUD redirect already displaces. `CGraphicsEngine::GetBackBufferLinear` is an accessor with no callers.
 - **`m_PostEffectRenderSetup`** — read only in `HandleDrawThreadTask`, three times in succession: `SetRenderSetup`, then as the first argument of `CPostEffectsManager::ApplyWorldFilters` and of `CRenderEngine::DrawPosteffects`.
 - **`m_BackBufferRenderSetup`** — read in `HandleDrawThreadTask` (the final composite and UI target), in `ApplyResize` step 8, and in `ApplyMode`.
 - **`m_RenderContext.m_RenderSetup`** — the render context's copy, consumed wherever the context's setup is read back.
@@ -46,9 +46,9 @@ Replacing the three objects and writing the mirrored copy therefore covers every
 
 The size comes from `device->m_DeviceInfo`, which is what `CreateRenderSetups` has just built everything else from — so the substitute's dimensions agree with `m_MainDepthSurface`'s, and the composite setup can pair the two. That agreement is the reason to substitute here rather than anywhere earlier.
 
-The hook deliberately ignores `CreateRenderSetups`' return value. Its declared C++ type is `bool` and the symbol-bearing dump ends in `return 1`, but **release codegen dropped that return**: the last instruction before the epilogue is the trailing `CreateRenderSetup` call, so `al` carries the low byte of the pointer it returned — reliably even, so a bit-0 test on it is always false. Gating the substitution on it silently disabled the whole feature.
+The hook deliberately ignores `CreateRenderSetups`' return value. Its declared C++ type is `bool`, but **the compiled function sets no return value**: the last instruction before the epilogue is the trailing `CreateRenderSetup` call, so `al` carries the low byte of the pointer it returned — reliably even, so a bit-0 test on it is always false. Gating the substitution on it silently disabled the whole feature.
 
-**`Graphics::ResizeBuffers` (`0x141_952_400`) — a substitute, not a suppression.** `ApplyResize` calls this between `DestroyRenderSetups` and `CreateRenderSetups`, then immediately reads the new size back out of `device->m_DeviceInfo` and feeds it to `CreateRenderSetups` and to every registered resize callback. A plain no-op would leave the whole pipeline at the old size.
+**[`Graphics::ResizeBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::device##func-ResizeBuffers) — a substitute, not a suppression.** `ApplyResize` calls this between `DestroyRenderSetups` and `CreateRenderSetups`, then immediately reads the new size back out of `device->m_DeviceInfo` and feeds it to `CreateRenderSetups` and to every registered resize callback. A plain no-op would leave the whole pipeline at the old size.
 
 So the detour skips the DXGI half — the `OMSetRenderTargets(0, …)`, the view and texture release, the `IDXGISwapChain::ResizeBuffers`, the buffer-0 re-acquire — but still writes `m_DeviceInfo.m_DisplayWidth`, `m_DisplayHeight`, and `m_DisplayRatio`, sets `m_WasResized`, and returns success. `ApplyResize` then runs verbatim: scene targets, pass pools, UI reset, and the camera aspect all follow the render size, while the DXGI buffers never move.
 
@@ -58,7 +58,7 @@ Both hooks are gated on the same ownership flag, so they cannot land one without
 
 ## 4. Ownership
 
-`Graphics::DestroySurface` (`0x141_953_9C0`) has **no already-freed guard on this build**: no active/inactive bookkeeping survives release codegen, so a double destroy is an unguarded use-after-free that corrupts silently and surfaces somewhere unrelated, later. There is one ownership rule, and it carries the whole design:
+[`Graphics::DestroySurface`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::surface##func-DestroySurface) has **no already-freed guard**: no active/inactive bookkeeping survives compilation, so a double destroy is an unguarded use-after-free that corrupts silently and surfaces somewhere unrelated, later. There is one ownership rule, and it carries the whole design:
 
 - The three substitute objects live in the **engine's own fields**, and the engine's `DestroyRenderSetups` frees them correctly, because they are engine-allocated objects sitting where engine-allocated objects belong. The mod never holds a second pointer to any of them, and never frees them itself.
 - The **backing texture** is the one object the engine knows nothing about — nothing in `DestroyRenderSetups` corresponds to it. The mod owns that handle alone and frees it exactly once, with `Graphics::Destroy2DTexture`, after the engine has been told to stop using it.
@@ -68,7 +68,7 @@ Two orderings follow, and both are load-bearing:
 - Within the substitution, install the new pointers *before* destroying the old ones, so every field stays non-null for the whole window. `CreateRenderSetups` only runs on the drained idle context, so no other thread is looking, but the ordering costs nothing.
 - Across a transition, clear the ownership flag *before* the resize that rebuilds the engine's originals, never after. Clearing it afterwards leaves the engine bound to a texture about to be freed.
 
-`DestroyRenderSetup` unbinds a setup from the device if it is the active one, so destroying a bound setup is safe. Nothing registers surfaces by name on this build — the resource tracking that read `params.m_Name` is compiled out — so the substitute's name (`"VrBackBuffer"`) is for whoever reads a memory dump, and can collide with nothing.
+`DestroyRenderSetup` unbinds a setup from the device if it is the active one, so destroying a bound setup is safe. Nothing registers surfaces by name — the resource tracking that read `params.m_Name` is compiled out — so the substitute's name (`"VrBackBuffer"`) is for whoever reads a memory dump, and can collide with nothing.
 
 ## 5. Lifecycle
 
@@ -102,6 +102,8 @@ The mirror is the composite, and it already existed. This adds no present path; 
 
 Because `m_BackBuffer` and `m_BackBufferLinear` now answer different questions, every consumer has to pick one. `crate::stereo::render_size` reads `m_BackBufferLinear` and is the render basis; `per_eye_render_size` halves it under single-pass double-wide. Anything sizing a resource *to the render* uses those — the per-eye capture textures, the F10 capture, the HUD's reset proxy, and its engine-binding restore. Only code addressing the presented surface reads the swapchain's size: the mirror's viewport, and the cursor mapping's window basis.
 
+These mod-owned render-sized resources (the FSR contexts and outputs, the per-eye capture textures, the F10 capture) are outside the engine's teardown ([`render-setups-reinit.md` §3](../../engine/rendering/render-setups-reinit.md#3-what-destroyrendersetups-tears-down)), so a resize does not re-create them. Each compares the size it was built for against the current render size when it next runs, and re-creates itself on a change (`payload/src/fsr/mod.rs`, `payload/src/ui/render/capture.rs`, `payload/src/capture/mod.rs`). This follows the engine's resize rather than racing it.
+
 The HUD texture is neither. It is a flat panel at a fixed apparent size, so what it needs is enough texels to look crisp at that size — a property of the headset and the panel's angular size, not of the scene's pixel count. `hud.render_resolution` pins it outright; otherwise it derives from `render_scale * sqrt(eye_width * eye_height)`. The geometric mean, rather than the longer axis, keeps the budget stable as the render target's shape changes: a per-eye target is much taller than it is wide, and the older `render_scale * max(w, h)` inflated the HUD 2x under double-wide.
 
 ## 7. Interactions
@@ -128,7 +130,7 @@ All four constructors and both destructors are ordinary `Graphics::` free functi
 
 A "surface" in this engine is an `HTexture_t` obtained either from `GetRenderTarget` over a texture or from `CreateSurfaceAlias` over another surface; there is no `Graphics::CreateSurface`. `CreateRenderSetups` builds every scene target as `Create2DTexture` → `GetRenderTarget`, and the substitute follows that pattern.
 
-A render setup reads no width or height at all — its dimensions come entirely from its bound targets, which is why `SetRenderSetup` can synthesize a full-target viewport from them. The substitute setups use the values `CreateRenderSetups` uses for both back-buffer setups: `m_MultisampleFormat = 1`, `m_Mask = 15`, and the `+0xD0` bitfield at `0x79` (`m_AutoResolve = 1`, `m_EDRAMLayout = 0`, `m_UAVStart = 15`, the "immediately after the colour targets" sentinel).
+A render setup reads no width or height at all — its dimensions come entirely from its bound targets, which is why `SetRenderSetup` can synthesize a full-target viewport from them. The substitute setups use the values `CreateRenderSetups` uses for both back-buffer setups: [`MultisampleFormat::None`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::MultisampleFormat##variant-None) for [`CreateRenderSetupParams::m_MultisampleFormat`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::CreateRenderSetupParams##field-m_MultisampleFormat), [`CreateRenderSetupParams::MASK_ALL_CHANNELS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::CreateRenderSetupParams::MASK_ALL_CHANNELS) for [`CreateRenderSetupParams::m_Mask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::CreateRenderSetupParams##field-m_Mask), and [`CreateRenderSetupParams::DEFAULT_FLAGS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::CreateRenderSetupParams::DEFAULT_FLAGS) for the [`CreateRenderSetupParams::m_Flags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::CreateRenderSetupParams##field-m_Flags) bitfield. The doc comment on `DEFAULT_FLAGS` lists its subfields, including the `m_UAVStart` sentinel for "immediately after the colour targets".
 
 Both parameter structs are written through a raw pointer into zeroed storage rather than materialised as Rust values. The engine leaves several fields at zero, and zero is not a valid discriminant for every enum among them — `TileMode` has none — so producing either struct by value would be instant undefined behaviour. Writing field-by-field through the pointer makes the bytes exactly what the engine's own call sites pass, without ever asserting enum validity.
 
@@ -136,9 +138,9 @@ Both parameter structs are written through a raw pointer into zeroed storage rat
 
 The substitute is a single `ABGR32` texture filling both the `m_PostEffectRenderSetup` colour-target role and the `m_BackBufferLinear` role. No alias and no `m_Castable` is needed, because there is no format gap to bridge.
 
-`CGraphicsEngine::InitializeSystem` hardcodes `m_FrontBufferFormat = 28` and leaves the adjacent `m_FrontBufferColorSpace` zero, both in one 8-byte write. `Graphics::InitializeDevice` applies `MakeSRGBFormat` only when that colour-space flag is set, so the format passes through unconverted to `device->m_BackBufferFormat` and to `sd.BufferDesc.Format` for `CreateSwapChain`: **the swapchain is `R8G8B8A8_UNORM`, not the `_SRGB` variant.** The same function writes that value into the back-buffer `HTexture_t`'s format field, so `GetDeviceSurface(BACK_BUFFER)->m_Format` is `28` too.
+[`GraphicsEngine::InitializeSystem`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-InitializeSystem) hardcodes `m_FrontBufferFormat` to [`SurfaceFormat::ABGR32`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::surface::SurfaceFormat##variant-ABGR32) and leaves the adjacent `m_FrontBufferColorSpace` zero, both in one 8-byte write. `Graphics::InitializeDevice` applies `MakeSRGBFormat` only when that colour-space flag is set, so the format passes through unconverted to `device->m_BackBufferFormat` and to `sd.BufferDesc.Format` for `CreateSwapChain`: **the swapchain is `R8G8B8A8_UNORM`, not the `_SRGB` variant.** The same function writes that value into the back-buffer `HTexture_t`'s format field, so `GetDeviceSurface(BACK_BUFFER)->m_Format` is `ABGR32` too.
 
-`ESurfaceFormat` defines `SURFACEFORMAT_ABGR32 = 0x1C` = 28, with no separate sRGB enumerator — sRGB-ness is orthogonal and applied at creation time. For these common formats the engine's enum *is* the DXGI numbering, so 28 means `DXGI_FORMAT_R8G8B8A8_UNORM` in both namespaces, and `m_BackBufferLinear`'s requested format equals its source's native format exactly.
+`SurfaceFormat` has no separate sRGB enumerator for `ABGR32`. sRGB-ness is orthogonal and applied at creation time. For these common formats the engine's enum values are the DXGI numbering, so `ABGR32` has the value of `DXGI_FORMAT_R8G8B8A8_UNORM`, and `m_BackBufferLinear`'s requested format equals its source's native format exactly.
 
 This also puts evidence under the mirror's gamma reasoning, which argues from the swapchain being non-sRGB that no conversion belongs in the mirror path.
 
@@ -167,6 +169,6 @@ That reference is also why `ApplyResize` destroys the setups before calling `Gra
 
 ## 11. A note on symbols
 
-The release IDB's `Graphics::` names are demonstrably unreliable. This work found two mislabelled functions whose names are swapped with each other: `0x141_95A_BA0`, labelled `Graphics::CopySurfaceToTexture`, is really `Graphics::EndDraw(ctx)`, and `0x141_954_850`, labelled `NGraphicsEngine::CGPUProfiler::BeginScope`, is really `Graphics::CopySurfaceToTexture(ctx, dst, src)`. `CGraphicsEngine::SaveScreen` (`0x140_0DE_C90`) is labelled `CGPUProfiler::EndFrame`, and `Graphics::CreateRenderSetup` (`0x141_954_5F0`) was already known mislabelled as `LockVolumeTexture`.
+The IDB's `Graphics::` names are demonstrably unreliable. This work found two mislabelled functions whose names are swapped with each other: the function labelled `Graphics::CopySurfaceToTexture` is really [`Graphics::EndDraw(ctx)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-EndDraw), and the function labelled `NGraphicsEngine::CGPUProfiler::BeginScope` is really [`Graphics::CopySurfaceToTexture(ctx, dst, src)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-CopySurfaceToTexture). [`GraphicsEngine::SaveScreen`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-SaveScreen) is labelled `CGPUProfiler::EndFrame`, and [`Graphics::CreateRenderSetup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::surface##func-CreateRenderSetup) was already known mislabelled as `LockVolumeTexture`.
 
-That mislabelling had a real cost: it is what made an earlier investigation conclude the engine performed a final resolve into the back buffer that would have to be suppressed or retargeted — the hardest-looking part of the plan, and a thing that does not exist. Every address recorded here was verified by call-site correspondence or body inspection rather than by name, and any further symbol taken from that namespace must be too.
+That mislabelling had a real cost: it is what made an earlier investigation conclude the engine performed a final resolve into the back buffer that would have to be suppressed or retargeted — the hardest-looking part of the plan, and a thing that does not exist. Every function this work relies on was verified by call-site correspondence or body inspection rather than by name, and any further symbol taken from that namespace must be too.

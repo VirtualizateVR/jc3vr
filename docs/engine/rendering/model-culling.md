@@ -1,83 +1,44 @@
 # Model culling
 
-How Just Cause 3 decides whether a model instance's geometry reaches a render pass. Written as the game
-is; the VR mod's widening of these frustums is a separate concern (see the culling hooks in `payload`).
+How Just Cause 3 decides whether a model instance's geometry reaches a render pass.
 
 There are **two** independent visibility gates for a model, at different stages:
 
 ## 1. Instance-level BFBC cull (build phase)
 
-`CModelCollection::DoCulling` (release `0x140_4E7_950`, **mislabeled `CAOVolumeManager::AddToRenderThread`
-in the IDB**) runs the broad-phase (BFBC) scene cull over model instances and passes each survivor to
-`ShowUpdate` → `CModelInstance::AddToRender`. This level tests against the occluder manager's
-`m_CullingCamera` (`this+0x8`) — the same camera the mod's scene-cull widen already covers.
+[`ModelCollection::DoCulling`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelCollection##func-DoCulling) (**mislabeled `CAOVolumeManager::AddToRenderThread` in the IDB**) runs the broad-phase (BFBC) scene cull over model instances and passes each survivor to `ShowUpdate` → `ModelInstance::AddToRender`. This level tests against the occluder manager's `m_CullingCamera`, which sits at [`OccluderCollectionManager::CULLING_CAMERA_OFFSET`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::OccluderCollectionManager::CULLING_CAMERA_OFFSET) in [`OccluderCollectionManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::OccluderCollectionManager).
 
 ## 2. Per-render-block frustum cull (draw-list build)
 
-`CModelInstance::AddToRender` (release `0x140_319_BD0`, **mislabeled `CModelInstance::AddToPass` in the
-IDB**) builds the per-pass draw lists for one instance's render blocks. It constructs an
-`SAddtoRenderContext` whose **`m_Camera` is the camera manager's active camera**
-(`CCameraManager::Instance` `0x142_ED0_E20`, `m_ActiveCamera` at `+0x5C0`), then dispatches to
-`NModelSystem::ForEachRb<UseBBoxRBView, CoarsePreZ>` selected by two globals:
+[`ModelInstance::AddToRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstance##func-AddToRender) (**mislabeled `CModelInstance::AddToPass` in the IDB**) builds the per-pass draw lists for one instance's render blocks. It constructs an [`AddToRenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::AddToRenderContext) whose **`m_Camera` is the camera manager's active camera** ([`CameraManager::m_ActiveCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager##field-m_ActiveCamera) of the [`CameraManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera_manager::CameraManager) singleton), then dispatches to `NModelSystem::ForEachRb<UseBBoxRBView, CoarsePreZ>` selected by two globals:
 
-- `g_UseBoundingBoxModelRBView` = `0x142_D4B_7B5`
-- `g_EnableCoarsePreZModels` = `0x142_D4B_7B4`
+- [`use_bounding_box_model_rb_view`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::use_bounding_box_model_rb_view) (`g_UseBoundingBoxModelRBView`)
+- [`enable_coarse_pre_z_models`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::enable_coarse_pre_z_models) (`g_EnableCoarsePreZModels`)
 
-Both are statically initialized to `1`, so release always runs the `<1,1>` instantiation
-(`0x140_316_E50`; the `<0,1>` `0x140_317_650` and `<1,0>` `0x140_317_E50` variants also test). Each of
-these calls `CCamera::IsBoxVisible(context.m_Camera, blockWorldAABB)` **per render block** and, on
-failure, skips that block for *every* pass (`if (!IsBoxVisible(ctx.m_Camera, box)) continue`). Only the
-`<0,0>` variant (`0x140_318_2C0`) has no test (and loses coarse pre-Z). Thresholds live at `0x142_D4B_7B8`
-(0.15) and `0x142_D4B_7BC` (0.01).
+Both are statically initialized to `1`, so the game always runs the `<1,1>` instantiation ([`ModelInstance::ForEachRb_1_1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstance##func-ForEachRb_1_1); the `<0,1>` [`ForEachRb_0_1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstance##func-ForEachRb_0_1) and `<1,0>` [`ForEachRb_1_0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstance##func-ForEachRb_1_0) variants also test). Each of these calls `Camera::IsBoxVisible(context.m_Camera, blockWorldAABB)` **per render block** and, on failure, skips that block for *every* pass (`if (!IsBoxVisible(ctx.m_Camera, box)) continue`). Only the `<0,0>` variant ([`ForEachRb_0_0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstance##func-ForEachRb_0_0)) has no test (and loses coarse pre-Z). The coarse pre-Z path has two thresholds of its own, [`coarse_pre_z_models_distance_threshold`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::coarse_pre_z_models_distance_threshold) (0.15, scaled by 1000 against the projected `w`) and [`coarse_pre_z_models_area_threshold`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::coarse_pre_z_models_area_threshold) (0.01, a projected area); neither is a bounding-box test threshold.
 
-`CCamera::IsBoxVisible` (`0x140_09C_210`) tests a world-space AABB against the camera's precomputed
-frustum planes (`m_FrustumPlane` at `+0x414` plus AAB acceleration data), rebuilt each frame by
-`Camera::UpdateFrustum` (`0x140_0B2_FC0`) from the centre `m_ViewProjection` (`+0x314`).
+[`Camera::IsBoxVisible`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-IsBoxVisible) tests a world-space AABB against the camera's precomputed frustum planes ([`Camera::m_FrustumPlane`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_FrustumPlane) plus AAB acceleration data), rebuilt each frame by [`Camera::UpdateFrustum`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##func-UpdateFrustum) from the centre [`Camera::m_ViewProjection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_ViewProjection).
 
-**Consequence:** a model's render blocks are re-culled against the **narrow active-camera frustum** after
-the broad BFBC pass, using a frustum distinct from the occluder-cull and terrain cameras. A large
-multi-block building therefore disappears at the edge of a wider (e.g. combined-eye) view even though the
-BFBC pass admitted the instance. Sprites (`CRenderBlockParticle`) and gathered lights use other paths that
-don't route through `ForEachRb`.
+**Consequence:** a model's render blocks are re-culled against the **narrow active-camera frustum** after the broad BFBC pass, using a frustum distinct from the occluder-cull and terrain cameras. When a view wider than the active camera's frustum renders the draw lists, a large multi-block building disappears at that view's edge even though the BFBC pass admitted the instance. Sprites (`CRenderBlockParticle`) and gathered lights use other paths that don't route through `ForEachRb`.
 
 ## The same active-camera frustum elsewhere
 
-`CCamera::IsBoxVisible` against `m_ActiveCamera` also gates:
+`Camera::IsBoxVisible` against `m_ActiveCamera` also gates:
 
-- `CModelInstanceManager::StartFade` — an instance "not in view" hides **instantly** instead of fading
-  (edge pop rather than a dissolve).
-- `CRoadMeshManager::UpdateAddToRenderer` (`0x140_533_300`).
-- `CLightManager::UpdateRender` / `AddFarLightsToPass` far-light cells (`0x140_0CF_EE0` / `0x140_0B9_C10`).
+- `CModelInstanceManager::StartFade` — an instance "not in view" hides **instantly** instead of fading (edge pop rather than a dissolve).
+- [`RoadMeshManager::UpdateAddToRenderer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::RoadMeshManager##func-UpdateAddToRenderer).
+- [`LightManager::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::light_manager::LightManager##func-UpdateRender) / [`AddFarLightsToPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::light_manager::LightManager##func-AddFarLightsToPass) far-light cells.
 
 ## Related: spawn visibility
 
-`CSpawnSystem::Update` (`0x140_EFE_E90`; spawn singleton `0x142_F18_998`, `m_SpawnBFBC` `+0x168`,
-`m_SpawnBFBCParams` `+0x170`, `m_SpawnBFBCState` `+0x178`, `m_CenterPos` `+0x184`, `m_ViewPos` `+0x190`,
-`m_ViewDir` `+0x19C`) calls `GetBFBCFrustumParamsForCameraAndTime` at its tail, passing the camera
-manager's `m_ActiveCamera` (not the occluder manager's `m_CullingCamera`). The resulting BFBC params are
-used in `CSpawnFactoryImpl::CheckInternal` (`0x140_F09_430`) as a "don't (de)spawn while visible" gate.
-Its budgets are characters and vehicles, so it governs NPC/vehicle (de)spawns near the view edge, not
-buildings. Because the frustum is built from the active camera's narrow centre projection, the spawn
-gate does not account for the wider VR eye frusta — the mod widens it via the `get_bfbc_frustum_params`
-detour (`widen_spawn_cull`).
+[`Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem##func-Update) (on the [`SpawnSystem`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem) singleton, whose BFBC state is [`m_SpawnBFBC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem##field-m_SpawnBFBC), [`m_SpawnBFBCParams`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem##field-m_SpawnBFBCParams), [`m_SpawnBFBCState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem##field-m_SpawnBFBCState), [`m_CenterPos`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem##field-m_CenterPos), [`m_ViewPos`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem##field-m_ViewPos), and [`m_ViewDir`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnSystem##field-m_ViewDir)) calls [`GetBFBCFrustumParamsForCameraAndTime`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::OccluderCollectionManager##func-GetBFBCFrustumParamsForCameraAndTime) at its tail, passing the camera manager's `m_ActiveCamera` (not the occluder manager's `m_CullingCamera`). The resulting BFBC params are used in [`CheckInternal`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/spawn_system::SpawnFactoryImpl##func-CheckInternal) as a "don't (de)spawn while visible" gate. Its budgets are characters and vehicles, so it governs NPC/vehicle (de)spawns near the view edge, not buildings. The frustum is built from the active camera's narrow centre projection, so the spawn gate covers only that frustum, and a view wider than it can see (de)spawns near its edge.
 
 ## Related: character occlusion
 
-`CGameWorldObjectManager::StartCommitAddRemove` (`0x140_4B_B8B0`; singleton `0x142_F17_128`) copies the
-camera manager's `m_ActiveCamera` into `m_OcclusionCamera` (`+0x9F8`) each frame, then dispatches
-`SCharacterOcclusionHandler::ProcessCharacterOcclusion` (`0x140_4B_B7E0`) via a CPU fragment. That
-function calls `GetBFBCFrustumParamsForCameraAndTime` with the active camera, then runs `BFBCProcess`
-with `E_BFBC_PROCESSFUNCTION_FRUSTUM_CULL` to cull character occlusion — hiding characters the frustum
-rejects. As with the spawn system, the frustum is built from the narrow centre camera, so characters
-visible to an offset VR eye can be occlusion-culled. The mod widens this through the same
-`get_bfbc_frustum_params` detour.
+[`StartCommitAddRemove`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world_object_manager::GameWorldObjectManager##func-StartCommitAddRemove) (on the [`GameWorldObjectManager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world_object_manager::GameWorldObjectManager) singleton) copies the camera manager's `m_ActiveCamera` into [`m_OcclusionCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world_object_manager::GameWorldObjectManager##field-m_OcclusionCamera) each frame, then dispatches `SCharacterOcclusionHandler::ProcessCharacterOcclusion` ([`ProcessCharacterOcclusion`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world_object_manager::GameWorldObjectManager##func-ProcessCharacterOcclusion)) via a CPU fragment. That function calls `GetBFBCFrustumParamsForCameraAndTime` with the active camera, then runs `BFBCProcess` with `E_BFBC_PROCESSFUNCTION_FRUSTUM_CULL` to cull character occlusion — hiding characters the frustum rejects. As with the spawn system, the frustum is built from the narrow centre camera, so a view offset from or wider than that camera can show characters that the occlusion pass culls.
 
 ## IDB symbol caveats
 
-Several `CModelInstanceManager`-area names in the release IDB are misassigned from the debug-symbol port:
-`AddToPass` at `0x140_319_BD0` is really `AddToRender`; `CAOVolumeManager::AddToRenderThread` at
-`0x140_4E7_950` is really `CModelCollection::DoCulling`; `DumpModelInstanceHistogram` at `0x140_4F3_010`
-is a distance-streaming task. Rename before further work.
+Several `CModelInstanceManager`-area names in the IDB are misassigned: `AddToPass` is really `AddToRender`; `CAOVolumeManager::AddToRenderThread` is really `CModelCollection::DoCulling`; `DumpModelInstanceHistogram` is a distance-streaming task, bound as [`ModelInstanceManager::TextureStreamingTask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::model_instance::ModelInstanceManager##func-TextureStreamingTask). The pyxis defs carry the correct names. Rename them in the IDB before further work.
 
-Findings from a decompilation sweep of the release binary; not yet runtime-verified. Quickest confirmation:
-zero `0x142_D4B_7B4` / `0x142_D4B_7B5` live and check whether building edge-pop disappears.
+Findings from a decompilation sweep of the binary; not yet runtime-verified. Quickest confirmation: zero `use_bounding_box_model_rb_view` and `enable_coarse_pre_z_models` live and check whether building edge-pop disappears.

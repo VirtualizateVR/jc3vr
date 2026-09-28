@@ -1,7 +1,7 @@
 # The in-game profiler (issue #34)
 
-The mod carries its own frame profiler because the engine's is dead in retail: the 15-phase
-`CpuProfiler` is never written (`docs/engine/performance/profiling.md` §1.1), the `CGPUProfiler` read-back is
+The mod carries its own frame profiler because the engine's is dead: the
+[`CpuProfiler`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/cpu_profiler::CpuProfiler), with one phase per [`CpuScopeId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/cpu_profiler::CpuScopeId), is never written (`docs/engine/performance/profiling.md` §1.1), the `CGPUProfiler` read-back is
 stubbed (§2.2), and the on-screen frame graph is stripped (§1.4). What survives — the live D3D11
 timestamp-query wrappers and the hookable frame-phase functions — is exactly enough to rebuild the
 pipeline mod-side, which is what `payload/src/profiler/` does on top of
@@ -101,7 +101,7 @@ the frame bars.
 
 - `payload/src/profiler/mod.rs` — the switchboard: the per-frame `new_frame`, the enable state,
   and the dynamic-scope registry for engine-supplied names.
-- `payload/src/profiler/gpu.rs` — the GPU timestamp ring, the busy/starved decomposition, and the
+- `payload/src/profiler/gpu/` — the GPU timestamp ring, the busy/starved decomposition, and the
   puffin GPU-lane reporting.
 - `payload/src/profiler/blocks.rs` — the per-render-block-type draw counters.
 - `payload/src/profiler/capture.rs` — the 5 s capture state machine (a puffin frame sink).
@@ -118,4 +118,19 @@ the frame bars.
   the whole hook library. The highest-value names they carried (the per-render-block-type runs)
   are recovered from `ChangeRenderBlockType` instead; the remaining post-effect-internal names are
   a possible future extension if the coarse seams prove too blunt.
-- `g_CpuProfiler` is not read: it holds only zeros in retail.
+- The engine's extern profiler object ([`cpu_profiler`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/cpu_profiler::cpu_profiler), `g_CpuProfiler`) is not read: it holds only zeros.
+- The engine's `ProfilerThreadEnter` / `ProfilerThreadLeave` scope primitives ([`profiling.md` §1.2](../../engine/performance/profiling.md#12-sprofiler-scope-primitives-compiled-out)) are not used. They are not yet located, and the IDB functions carrying those names are unrelated code. Their read-back side is stripped, so scopes recorded through them would
+  also need a raw read of the entry table, and they depend on the engine's global profiler state.
+  puffin scopes on the same seams give the same attribution without either dependency.
+- The stripped display paths (`CFrameProfiler`, the `CProfilerUtil` budget display (not yet located), and the
+  `CGPUProfiler` read-back) are not revived. The rebuild on the live primitives is less work and
+  does not depend on reconstructing stripped code.
+- The engine's own `CGPUBufferedQuery` frame ring
+  ([`profiling.md` §2.2](../../engine/performance/profiling.md#22-cgpubufferedquery--ring-buffered-gpu-queries-live))
+  is not reused. It belongs to the stripped `CGPUProfiler`: the game only begins and ends a
+  frame-level disjoint query with it, and the per-scope recording and read-back never run. The GPU
+  lane issues its own queries through the `Graphics::*` wrappers instead.
+- `CRenderPassGpuTimingQuery`
+  ([`profiling.md` §2.3](../../engine/performance/profiling.md#23-crenderpassgputimingquery--live-but-a-single-pass-adaptive-quality-timer))
+  is not repurposed. It times only the particle pass, and timing another pass with it needs a new
+  instance and new begin/end call sites, which the mod's own timestamp ring already provides.

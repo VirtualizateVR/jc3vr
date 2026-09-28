@@ -22,7 +22,7 @@ pipeline.
 
 ### Decoupled sim/render architecture
 
-`CGame::Update` (dump: `CGame.cpp`) implements the decoupled update loop. The
+`CGame::Update` implements the decoupled update loop. The
 engine runs a fixed-step simulation and a variable-rate render. The key state
 lives on the `CGame` struct (`CGame.h`):
 
@@ -33,7 +33,7 @@ lives on the `CGame` struct (`CGame.h`):
 | `m_DecoupleEnabled` | `bool` | Whether sim and render are decoupled. |
 | `m_InterpolationMethod` | `int` | Active interpolation method (see below). |
 | `m_PrevInterpolationMethod` | `int` | Previous method (for re-init detection). |
-| `m_InterpolationOverride` | `int` | Console override (-1 = no override). |
+| `m_InterpolationOverride` | `int` | Console override ([`Game::INTERPOLATION_OVERRIDE_NONE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game::INTERPOLATION_OVERRIDE_NONE) when unset). |
 | `m_RunningFrameFraction` | `float` | Accumulated fractional tick (0.0–1.0). |
 
 ### Interpolation method values
@@ -42,33 +42,29 @@ The engine sets `m_InterpolationMethod` every frame in the decoupled path:
 
 ```c
 if (CSequenceObject2::m_nCutscenesPlaying)
-    this->m_InterpolationMethod = 2;  // cutscene: accumulator-based
+    this->m_InterpolationMethod = INTERPOLATION_METHOD_ACCUMULATED;
 else
-    this->m_InterpolationMethod = 1;  // gameplay: single-step
+    this->m_InterpolationMethod = INTERPOLATION_METHOD_SINGLE_STEP;
 if (this->m_InterpolationOverride >= 0)
     this->m_InterpolationMethod = m_InterpolationOverride;
 ```
 
 The `switch (m_InterpolationMethod)` has three cases:
 
-- **Method 1 (gameplay, default):** Runs `CGame::UpdateGame` at most once per
+- **[`Game::INTERPOLATION_METHOD_SINGLE_STEP`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game::INTERPOLATION_METHOD_SINGLE_STEP) (gameplay, default):** Runs `CGame::UpdateGame` at most once per
   render frame, accumulating the fractional timestep in
   `m_RunningFrameFraction`. The fraction is stored into the render context's
   `m_Dtf` field. This is the normal gameplay path.
 
-- **Method 2 (cutscene):** Similar accumulator but runs multiple updates if
+- **[`Game::INTERPOLATION_METHOD_ACCUMULATED`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game::INTERPOLATION_METHOD_ACCUMULATED) (cutscene):** Similar accumulator but runs multiple updates if
   the accumulator exceeds 1.0, subtracting 1.0 per update. Used during
   cutscenes for tighter sim/render coupling.
 
-- **Method 3:** A time-based accumulator that computes the number of updates
+- **[`Game::INTERPOLATION_METHOD_TIME_BASED`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game::INTERPOLATION_METHOD_TIME_BASED):** A time-based accumulator that computes the number of updates
   from wall-clock time (`QueryPerformanceCounter`). More aggressive — can run
   multiple sim updates per render frame if the render rate is low.
 
-In all cases, the frame fraction (0.0–1.0) is stored at
-`update_context.m_RenderContext.m_Dtf` (the `SGameObjectRenderContext.m_Dtf`
-field, at byte offset 68 in the local `update_context_8` array — confirmed
-from the struct layout: `SGameObjectRenderContext` has `m_Dt` at offset 0,
-`m_Dtf` at offset 4).
+In all cases, the frame fraction (0.0–1.0) is stored in [`UpdateContexts::m_RenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::UpdateContexts##field-m_RenderContext) as [`GameObjectRenderContext::m_Dtf`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameObjectRenderContext##field-m_Dtf) (`SGameObjectRenderContext`), next to [`GameObjectRenderContext::m_Dt`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameObjectRenderContext##field-m_Dt).
 
 The `m_Dtf` is the **interpolation alpha** between the previous sim tick
 (T0) and the current sim tick (T1).
@@ -83,16 +79,13 @@ m_Dt = update_context->m_RenderContext.m_Dt;
 m_Dtf = update_context->m_RenderContext.m_Dtf;
 ```
 
-Then `CCharacter::UpdateRender` (dump: `CCharacter.cpp`, line ~42950) uses
+Then `CCharacter::UpdateRender` uses
 `m_Dtf` in two critical places:
 
 1. **Character world matrix interpolation:**
 
 ```c
-CTransform::Lerp(
-    (CTransform *)((char *)&v163.m256i_u64[1] + 4),
-    m_Dtf,
-    (const CTransform *)&this->m_GraphicsWorldT0.Translation.v[1]);
+CTransform::Lerp(&interpolated, m_Dtf, &this->m_GraphicsWorldT0);
 CTransform::ToMatrix4(..., &transform);
 ```
 
@@ -104,12 +97,11 @@ per-bone pose.
 2. **Skinning palette interpolation:**
 
 ```c
-if ((*(_DWORD *)&this->m_LightWeight & 0x100) == 0)
-    CCharacter::UpdateSkinning((CCharacter *)((char *)this - 8), m_Dtf);
+if (!lightweight_skinning_flag)  // a flag in m_LightWeight, not yet bound
+    CCharacter::UpdateSkinning(this, m_Dtf);
 ```
 
-`CCharacter::UpdateSkinning` (dump address `0x140_9DE_4B0`, release
-`0x140_77E_150`) calls:
+`CCharacter::UpdateSkinning` is inlined into `CCharacter::UpdateRender`, and the function IDA labels `CCharacter::UpdateSkinning` is an unrelated render-instance fade-alpha update. The inlined body calls:
 
 ```c
 NCharacterSystem::CAnimationControl::UpdateSkinning(
@@ -120,15 +112,14 @@ NCharacterSystem::CAnimationControl::UpdateSkinning(
 
 ### The skinning palette: T0/T1 pose interpolation
 
-`CAnimationControl::UpdateSkinning` (release `0x140_43F_CA0`) is where the
+[`AnimationController::UpdateSkinning`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationController##func-UpdateSkinning) (`CAnimationControl::UpdateSkinning`) is where the
 per-bone pose interpolation happens. It calls:
 
 ```c
 CPoseProducer::MakeSkinningPalette(this->m_Skinner.px, dtf, v13->Palette[v3 % 2]);
 ```
 
-`CPoseProducer::MakeSkinningPalette` (release `0x140_C3A_FF0`) is the key
-function. It:
+[`PoseProducer::MakeSkinningPalette`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::PoseProducer##func-MakeSkinningPalette) is the key function; IDA labels it `CPoseProducer::Update`, and the function carrying the `MakeSkinningPalette` label is unrelated and unreferenced. It:
 
 1. Reads `m_PoseT0` (previous sim tick's `hkaPose`) and `m_PoseT1` (current
    sim tick's `hkaPose`) from the `CPoseProducer`.
@@ -141,8 +132,7 @@ function. It:
    vertex shader reads for skinning.
 
 **This is the engine's built-in sub-frame pose interpolation.** The `hkaPose`
-pair (T0/T1) is maintained by the sim phase: `UpdatePassFinalizePose_Parallel`
-(release `0x140_7F9_B10`) finalizes T1, and the previous frame's T1 becomes
+pair (T0/T1) is maintained by the sim phase: [`Character::UpdatePassFinalizePose_Parallel`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdatePassFinalizePose_Parallel) finalizes T1, and the previous frame's T1 becomes
 T0.
 
 ### The camera transform interpolation
@@ -183,10 +173,8 @@ rotational discontinuities.
 
 The mod patches `Game::Update` to force `UpdateRender` every frame:
 
-- `Game::Update + 0x787`: nop the `m_UpdateFlags & 4` check (always
-  UpdateRender).
-- `Game::Update + 0x7A2`: nop everything between UpdateRender and
-  `++m_RenderCount` (the mod drives Draw itself).
+- At [`Game::UPDATE_RENDER_GATE_OFFSET`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game::UPDATE_RENDER_GATE_OFFSET) into [`Game::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-Update): nop the check of [`GameUpdateFlags::E_GUF_RENDER`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameUpdateFlags##flag-E_GUF_RENDER) in [`Game::m_UpdateFlags`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##field-m_UpdateFlags) (always UpdateRender).
+- For [`Game::UPDATE_RENDER_LENGTH_OFFSET`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game::UPDATE_RENDER_LENGTH_OFFSET) bytes: nop everything between UpdateRender and `++m_RenderCount` (the mod drives Draw itself).
 
 This forces the *render* side to run every frame, but the *simulation*
 (UpdateGame) still ticks at 30 Hz. The `m_Dtf` value is computed in the
@@ -253,8 +241,7 @@ If the engine's interpolation is insufficient or disabled, the mod could
 re-sample the animation pose between sim ticks in the existing
 `character_update_prop_effects` hook.
 
-**Finding:** The `character_update_prop_effects` hook (release
-`0x140_7C2_380`) runs in the SIM phase, after pose finalization. It has
+**Finding:** The `character_update_prop_effects` hook ([`Character::UpdatePropEffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdatePropEffects)) runs in the SIM phase, after pose finalization. It has
 access to the `AnimationController` and can call `GetJoint`/`SetJoint` to
 read and write the model-space pose. The hook already does `SetJoint` (the
 head-hide hack), proving the override reaches the render.
@@ -277,14 +264,11 @@ So the correct place to inject a custom interpolation is not
    is more invasive and requires understanding the palette's memory layout
    (an array of `CMatrix3x4f` per bone).
 
-3. **Override `UpdateSkinning`** — hook `CCharacter::UpdateSkinning` (release
-   `0x140_77E_150`) or `CAnimationControl::UpdateSkinning` (release
-   `0x140_43F_CA0`) and pass a custom `dtf`. This is the simplest
+3. **Override `UpdateSkinning`** — hook [`AnimationController::UpdateSkinning`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationController##func-UpdateSkinning) and pass a custom `dtf`. `CCharacter::UpdateSkinning` is not a separate function (it is inlined into `CCharacter::UpdateRender`), so it cannot be hooked. This is the simplest
    intervention: if the engine's `dtf` is wrong (e.g., 0.0 or 1.0), the hook
    can compute the correct sub-tick alpha and pass it instead.
 
-**Recommended sub-approach:** Hook `CAnimationControl::UpdateSkinning`
-(release `0x140_43F_CA0`) for the local player character only, and compute
+**Recommended sub-approach:** Hook `AnimationController::UpdateSkinning` for the local player character only, and compute
 the correct `dtf` from the real frame time and the known sim tick rate
 (1/30). This gives per-bone pose interpolation without touching the pose
 buffers or the skinning palette directly.
@@ -334,7 +318,7 @@ skinning-palette judder, independent of the now-smoothed camera and body root.
 | Is the mod's path preserving it? | Unknown — needs runtime logging. The mod forces UpdateRender but may be passing a stale/zeroed `m_Dtf`. |
 | Does the camera interpolate? | Yes, now — the mod writes T0/T1 from the previous/current headpose so the engine's `Lerp(TransformF, T0, T1, dtf)` smooths the camera (Approach C, shipped). It only collapses to a constant transform under `always_use_t1` (default `false`). |
 | Is `m_SkipSubframeInterpolation` relevant? | Only for ragdoll rotational discontinuities — not the general judder. |
-| Can the mod inject a custom `dtf`? | Yes — hook `CAnimationControl::UpdateSkinning` (release `0x140_43F_CA0`) and pass a computed sub-tick alpha. |
+| Can the mod inject a custom `dtf`? | Yes — hook [`AnimationController::UpdateSkinning`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationController##func-UpdateSkinning) and pass a computed sub-tick alpha. |
 
 ## Recommended next steps
 
@@ -362,16 +346,6 @@ the **body pose** — the per-bone skinning palette. The next steps:
    hook `CAnimationControl::UpdateSkinning` for the local player and pass a
    computed sub-tick alpha (Approach B).
 
-## Key release addresses
+## Bindings
 
-`CCharacter::UpdatePropEffects`, `CShadowManager::CommitRenderPassSettings`, and
-`CRenderPass::SetRenderContextCamera` now live in pyxis-defs; consult the
-bindings for their addresses. The symbols below are not yet defined there:
-
-| Symbol | Release address |
-|---|---|
-| `CCharacter::UpdatePassFinalizePose_Parallel` | `0x140_7F9_B10` |
-| `CCharacter::UpdateSkinning` | `0x140_77E_150` |
-| `CAnimationControl::UpdateSkinning` | `0x140_43F_CA0` |
-| `CPoseProducer::MakeSkinningPalette` | `0x140_C3A_FF0` |
-| `CCharacter::GetRenderTransform` | `0x140_75D_E50` |
+The functions this research depends on are bound in the pyxis defs: [`Character::UpdatePropEffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdatePropEffects), [`Character::UpdatePassFinalizePose_Parallel`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdatePassFinalizePose_Parallel), [`AnimationController::UpdateSkinning`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::AnimationController##func-UpdateSkinning), [`PoseProducer::MakeSkinningPalette`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::pose_producer::PoseProducer##func-MakeSkinningPalette), [`Character_GetRenderTransform`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/character::character##func-Character_GetRenderTransform) (`CCharacter::GetRenderTransform`), [`ShadowManager::CommitRenderPassSettings`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::ShadowManager##func-CommitRenderPassSettings), and [`RenderPass::SetRenderContextCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetRenderContextCamera). `CCharacter::UpdateSkinning` has no address of its own, because it is inlined into `CCharacter::UpdateRender`.

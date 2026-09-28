@@ -199,7 +199,7 @@ pub fn egui_debug_game(ui: &mut egui::Ui) {
                      Stick steering and velocity banking stay.",
                 );
             }
-            // The game's own relaxed (no-aim) strafe support, left in release from the dev menu:
+            // The game's own relaxed (no-aim) strafe support, left in the game from the dev menu:
             // while enabled, `QueueMoveActions` queues `ACT_MOVE_NO_AIM_STRAFE` -- a neutral-stance
             // strafe act -- instead of steering the body, when the move direction is within the
             // threshold window of the body's forward. Widening both thresholds to 180 makes every

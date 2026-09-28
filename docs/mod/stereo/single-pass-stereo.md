@@ -49,12 +49,7 @@ diagnostic shape rather than a usable one.
 
 #### The range is entered three times per dispatch
 
-`DrawRenderPassRange` is not one call per frame. `CGraphicsEngine::HandleDrawThreadTask` calls it
-three times, with bounds that are compile-time constants at each call site: `DrawGBuffer`
-(`0x2F..0x55`), `Draw` (`0x56..0x96`), and `DrawPosteffects` (`0x96..0x97`). `PreDraw` — the shadow,
-reflection, and vegetation prepasses — runs before all three and does not come through it. So without
-the collapse exactly one call qualifies (the G-buffer), and with it all three do, which means three
-`enter_gbuffer_range` / guard-drop pairs per dispatch.
+[`RenderEngine::DrawRenderPassRange`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawRenderPassRange) is not one call per frame. [`GraphicsEngine::HandleDrawThreadTask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-HandleDrawThreadTask) calls it three times, with bounds that are compile-time constants at each call site. [`RenderEngine::DrawGBuffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawGBuffer) draws `[RP_Z_OCCLUDERS, RP_LAST_GBUFFER)`, [`RenderEngine::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-Draw) draws `[RP_REFLECTIVE_WATER_PLANES, RP_POSTEFFECTS)`, and [`RenderEngine::DrawPosteffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-DrawPosteffects) draws `[RP_POSTEFFECTS, RP_LAST_MAIN)`; the bounds are [`RenderPassId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId) values. [`RenderEngine::PreDraw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-PreDraw) runs the shadow, reflection, and vegetation prepasses before all three and does not go through `DrawRenderPassRange`. Without the collapse exactly one call qualifies (the G-buffer), and with it all three do, which means three `enter_gbuffer_range` / guard-drop pairs per dispatch.
 
 Anything hung off a range boundary is therefore *not* per-frame under the collapse. The per-frame
 diagnostics (the instanced eye-parity exposure fold) run from `single_pass::begin_frame` instead, and
@@ -67,7 +62,7 @@ The flag is raised, read, and lowered entirely on the draw thread, inside one
 must run there too — it does, in the `PreDraw` prologue (`single_pass::begin_dispatch`), the one point
 in that thread's sequence where no range can be live.
 
-It used to run on the game thread at the top of `CGame::UpdateRender`, which is safe only while every
+It used to run on the game thread at the top of [`Game::UpdateRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-UpdateRender), which is safe only while every
 dispatch is drained before `UpdateRender` returns. With `stereo.defer_frame_tail` on (the default) the
 last dispatch is *not* drained: the draw thread keeps walking the previous frame's ~20k draws while
 the game thread runs the next frame's sim and re-enters `UpdateRender`. The clear then lands in the
@@ -80,8 +75,7 @@ a "torn" range and warns, which is the direct measurement of this happening.
 
 Why this is tractable at all: the blocker for retrofitting single-pass onto a deferred game is
 normally per-shader bespoke position math. JC3 has **one** scene view-projection —
-`RenderContext::m_OffsetViewProjection`, uploaded to the global VS constant buffer (`cb0`, rows 29–32,
-camera position at row 4). And double-draw already renders correct stereo, so every single-pass change
+[`RenderContext::m_OffsetViewProjection`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_OffsetViewProjection), uploaded to the global VS constant buffer (`cb0` registers 29 to 32, with the camera position at register 4; the engine stages these in [`RenderEngine::m_VPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_VPGlobalConstData)). And double-draw already renders correct stereo, so every single-pass change
 has a per-pass correctness oracle to diff against.
 
 ## The vertex-shader transform
@@ -350,7 +344,7 @@ sliding over the world.
 
 **Note on what is not the mechanism.** The obvious hypothesis — that some engine constant holds the
 wrong screen size — was investigated and is wrong. The engine has exactly one screen-size constant,
-`cb0[8].zw`, derived from the device display size, which the mod's `ResizeBuffers` substitute already
+`cb0[8].zw` (staged in [`RenderEngine::m_FPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_FPGlobalConstData)), derived from the device display size, which the mod's `ResizeBuffers` substitute already
 sets to the double-wide width; the buffers it addresses are double-wide too, so it is self-consistent,
 as are the `ftoi SV_Position` texel fetches (engine `rendering.md` §4.3). Do not go looking there
 again.
@@ -412,8 +406,8 @@ than double-exposing an accumulating pass. It reports which of the three happene
 `Demoted`, or `NotTaken` -- because a caller cannot infer it: only `NotTaken` means the pass still
 needs issuing, and the froxel split below needs to distinguish a demotion specifically.
 
-`CRenderBlockSSDecal` has the same defect without being a `PerspectiveFovInverse` consumer — its
-type-level `Setup` builds a basis inline into fragment `cb1[0..3]` and its pixel shader derives the
+`RenderBlockSSDecal` has the same defect without being a `PerspectiveFovInverse` consumer — its
+type-level [`RenderBlockTypeSSDecal::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeSSDecal##func-Setup) builds a basis inline into fragment `cb1[0..3]` and its pixel shader derives the
 depth-fetch UV projectively from its own clip position. `single_pass.ssdecal_per_eye` (**on**) fixes both
 halves together: the block is re-issued per eye restaging that eye's basis, and the 12 `ssdecal` pixel
 shaders get one spliced instruction biasing the depth UV into that eye's half. The same `uv` feeds the
@@ -514,7 +508,7 @@ both blend rather than overwrite, so re-issuing either per eye would double-comp
 
 Not a sliding defect, but the same shape and a defect in every collapsed frame: the grid is built with
 one eye's projection paired with the **double-wide** tile count, so it is twice as wide as the frustum
-it describes and every local light lands in the wrong 64-pixel tiles — for both eyes, and for the ~20
+it describes and every local light lands in the wrong tiles (each [`LightManager::LIGHT_GRID_TILE_SIZE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::light_manager::LightManager::LIGHT_GRID_TILE_SIZE) pixels wide) — for both eyes, and for the ~20
 forward-lit render-block types that sample it as well as the deferred resolve. `foliage` reads it a
 frame early, inside the G-buffer range. See engine `lighting-shadow-pipeline.md` §4.1–4.2 for how the
 grid is built and who consumes it.
@@ -533,10 +527,10 @@ eye's position, by writing the eye's world offset into the translation row of th
 matrix — algebraically identical to biasing the light positions, and it needs no engine write because
 that row is exactly where the engine's own zeroed translation goes. The per-eye display canting is not
 applied, only the positional offset. It keeps its own flag because the difference may fall below the
-64-pixel tile granularity.
+`LIGHT_GRID_TILE_SIZE` tile granularity.
 
 The split **declines itself**, leaving the un-split behaviour and logging once, when the eye seam
-would not fall on a whole tile column (double-wide width not a multiple of 128), when the bound
+would not fall on a whole tile column (double-wide width not a multiple of twice `LIGHT_GRID_TILE_SIZE`), when the bound
 assignment target is not the tile grid it sized for, or when the dispatch has no lights.
 
 One decline is worth spelling out, because the two preconditions involved disagree. The resolve mask
@@ -617,7 +611,7 @@ is marked with its actual default.
 not come through `DrawRenderPassRange`, so it is natural to read it as a large pool of draws the
 collapse has not claimed. It is not. **Under the collapse there is exactly one dispatch, so `PreDraw`
 already runs exactly once per frame.** `hooks/game.rs` builds the dispatch list as `&[(0, false)]`
-when `collapse_active()`, and `CGraphicsEngine::HandleDrawThreadTask` calls `CRenderEngine::PreDraw`
+when `collapse_active()`, and `GraphicsEngine::HandleDrawThreadTask` calls `RenderEngine::PreDraw`
 once per dispatch. There is no second walk to collapse; the ceiling on submission savings from
 extending the collapse over `PreDraw` is **zero**.
 
@@ -630,27 +624,21 @@ still runs twice.
 
 ### The classification
 
-`CRenderPass::Draw` (the pre-pass entry, vtable slot 0) selects the pass camera: the pass's own
-external camera if it has one, otherwise the camera manager's render camera. `SetRenderContextCamera`
-then overrides that from the render context's *pass id* for the shadow families — three disjoint
-branches selecting a uniform light camera at `pass − 22`, `pass − 30`, and `pass − 38`, which land
-exactly on `PRE_RP_STATIC_SHADOW_0` (22), `PRE_RP_SHADOW_0` (30), and
-`PRE_RP_SHADOW_REFLECTIVE_SUN_NEAR` (38). So pass ids 22–40 are rendered from the **sun / light**
-view by construction, not by convention, and cannot depend on which eye is being drawn.
+[`RenderPass::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-Draw) (the pre-pass entry) selects the pass camera: the pass's own external camera if it has one, otherwise the camera manager's render camera. [`RenderPass::SetRenderContextCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetRenderContextCamera) then overrides that from the render context's pass id for the shadow families. It has three disjoint branches, each selecting a uniform light camera indexed by the pass id relative to the first pass of its family: [`PRE_RP_STATIC_SHADOW_0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-PRE_RP_STATIC_SHADOW_0), [`PRE_RP_SHADOW_0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-PRE_RP_SHADOW_0), and [`PRE_RP_SHADOW_REFLECTIVE_SUN_NEAR`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-PRE_RP_SHADOW_REFLECTIVE_SUN_NEAR). The passes from `PRE_RP_STATIC_SHADOW_0` through `PRE_RP_SHADOW_REFLECTIVE_CAMERA` are therefore rendered from the sun or light view by construction, not by convention, and cannot depend on which eye is being drawn.
 
-| Category | Camera | Per-eye? |
-|---|---|---|
-| Terrain-patch prep (1–7) | falls through to the render camera | yes |
-| Sky-lighting LUT (8) | render camera | held per-eye, conservatively |
-| Planar + environment reflections (9–17) | the pass's own reflection camera | no |
-| Cloud shadows (18) | world-space | no |
-| Vegetation (19–21) | render camera | held per-eye, conservatively |
-| Sun-shadow cascade atlas, static + dynamic + reflective (22–40) | light camera, from the pass id | **no**, verified in the binary |
-| Water simulation compute (41–44) | own targets and viewports | no |
-| Rain occluder (45) | render camera | held per-eye, conservatively |
+| Category | `RenderPassId` range | Camera | Per-eye? |
+|---|---|---|---|
+| Terrain-patch prep | `RP_TERRAINPATCH_CLEAR` to `RP_TERRAINPATCH_ENUMERATION` | falls through to the render camera | yes |
+| Sky-lighting LUT | `PRE_RP_SKY_LIGHTING` | render camera | held per-eye, conservatively |
+| Planar + environment reflections | `PRE_RP_REFLECTION_PRE` to `PRE_RP_ENVREFLECTION` | the pass's own reflection camera | no |
+| Cloud shadows | `PRE_RP_CLOUDSHADOWS` | world-space | no |
+| Vegetation | `PRE_RP_VEGETATION_UPDATE` to `PRE_RP_VEGETATION_INTERACTION` | render camera | held per-eye, conservatively |
+| Sun-shadow cascade atlas, static + dynamic + reflective | `PRE_RP_STATIC_SHADOW_0` to `PRE_RP_SHADOW_REFLECTIVE_CAMERA` | light camera, from the pass id | **no**, verified in the binary |
+| Water simulation compute | `PRE_RP_WATER_CS_PRE` to `PRE_RP_WATER_DISPLACEMENT_PRE` | own targets and viewports | no |
+| Rain occluder | `RP_RAIN_OCCLUDER` | render camera | held per-eye, conservatively |
 
 `SHARED_PREPASS_CATEGORIES` in `hooks/graphics_engine/render_pass.rs` encodes the "no" rows that have
-been validated in game (9–18 and 22–44) and elides them on the second eye of the double-draw path.
+been validated in game (`PRE_RP_REFLECTION_PRE` to `PRE_RP_CLOUDSHADOWS`, and `PRE_RP_STATIC_SHADOW_0` to `PRE_RP_WATER_DISPLACEMENT_PRE`) and elides them on the second eye of the double-draw path.
 Under the collapse that elision is inert and correctly so — nothing is duplicated to elide.
 
 ### What is left
@@ -689,9 +677,8 @@ either: they are correctness surface, not duplicated work.
 - **GPU-indirect vegetation** needs an in-place compute pre-pass doubling each indirect draw's
   `InstanceCount` (dword +1 of the 5-dword args, in the GPU-only `veg_draw_indirect` buffer, which has
   no CPU copy) before it can be instance-doubled rather than re-issued.
-- **Bark's velocity pass** reprojects only the current-frame matrix; the previous-frame copy at
-  `cb1[5..8]` stays centred, so bark's motion vectors are slightly wrong for SMAA and FSR.
-- **The occluder intercept assumes `gfx.occluders.use_instancing = 0`** and nothing forces that cvar.
+- **Bark's velocity pass** reprojects only the current-frame matrix; the previous-frame copy that [`RenderBlockBark::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark##func-DrawZ) stages in `cb1` stays centred, so bark's motion vectors are slightly wrong for SMAA and FSR.
+- **The occluder intercept assumes `gfx.occluders.use_instancing` is off**, and nothing forces that cvar. The cvar's storage and default are not yet located.
 
 ## Already-instanced draws
 

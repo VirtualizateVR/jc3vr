@@ -1,12 +1,12 @@
 # Skeleton, pose, and bone override
 
-JC3 characters are posed via a Havok `hkaPose`. This covers how the pose is stored and updated, how to read and override individual bones, and where in the frame to do it so the change reaches both the camera and the rendered mesh. It's the foundation for driving the player's head from the HMD and, later, full-body IK.
+JC3 characters are posed via a Havok `hkaPose`. This covers how the pose is stored and updated, how to read and override individual bones, and where in the frame a change must happen to reach both the camera and the rendered mesh.
 
 ## Bone store: hkaPose, model-space
 
 The animation controller (`AnimationController`) holds a pose producer wrapping two `hkaPose` objects (current + a secondary/ragdoll pose). Each `hkaPose` keeps a local-space (parent-relative) and a model-space (character-root-relative) transform buffer (an `hkQsTransform` per bone — translation, rotation quat, scale), per-bone dirty flags, and a parent-index table. Those internals aren't needed if you use the Joint API below.
 
-Bones are **model-space, not parent-local**: a bone's world transform is `characterWorld · boneModelSpace`. This matches how the mod already reads the eye bones (`character_matrix * eye_matrix` in `calculate_head_position`).
+Bones are **model-space, not parent-local**: a bone's world transform is `characterWorld · boneModelSpace`.
 
 ## Read / write API (Joint)
 
@@ -23,26 +23,26 @@ So overriding a bone is a `SetJoint`, not a buffer patch. To place the head at a
 
 The root for "head relative to body" is the character world matrix `m_WorldMatrixT0/T1`. The chain is SPINE → SPINE1 → SPINE2 → STERNUM → NECK → HEAD, with `fLeftEye`/`fRightEye` as facial children of HEAD (looked up by name hash via `GetBoneIndex`). Because everything is model-space, you don't walk the chain to place a bone — one `inverse(characterWorld)` multiply suffices.
 
+Bone rest frames are not aligned with the model axes. An absolute model-space orientation written to a bone therefore does not describe a neutral pose, and an orientation change is composed onto the animated orientation instead. `SetJoint(HEAD)` carries the facial children along, including `fLeftEye` and `fRightEye`, as verified in-game.
+
 ## Frame order, and where to override
 
 The pose is finalized in the SIM phase and consumed (camera, then skinning) in the RENDER phase:
 
     SIM:    UpdatePassFinalizePose_Parallel
               -> HumanIK pass, SyncPoses, CalculateModelSpacePose   => model-space pose finalized
-              -> Character::UpdatePropEffects                       <- last call; the mod already hooks this
+              -> Character::UpdatePropEffects                       <- last call
     RENDER: GameCameraManager::UpdateRender
-              -> CameraTree::UpdateRenderContexts                   <- mod camera hook (reads bones)
+              -> CameraTree::UpdateRenderContexts
               -> Camera::UpdateRender
             ... KickSkinningJob -> render submit
 
-The mod overrides at the **`Character::UpdatePropEffects` hook** (`payload/src/hooks/character/mod.rs`), in its post-call block: it's the last thing in `UpdatePassFinalizePose_Parallel`, after the model-space pose is built, in the SIM phase — so a `SetJoint` there is consumed by both the camera (which reads the same model-space buffer in the RENDER phase) and the skinning job.
+`Character::UpdatePropEffects` is the last call in `UpdatePassFinalizePose_Parallel`. It runs in the SIM phase, after the model-space pose is built. A `SetJoint` made when it returns therefore reaches both RENDER-phase consumers of the model-space buffer: the camera update and the skinning job.
 
-## The head-bone override (shipped)
+## Matrix basis convention
 
-In the local-player branch of the prop-effects hook, the mod first captures the *animated* head and neck joints (the anchors for the camera and the head-hide collapse target — see `docs/mod/body/head-and-body.md`), then rotates the HEAD bone by the headpose's body-relative angles composed onto the animated model-space orientation, keeping the animated translation plus the roomscale offset. Bone rest frames are **not** model-axis aligned, so orientation writes must compose onto the animated orientation rather than writing an absolute one (an absolute write collapsed the head into the shoulders in the shadow). Beyond the configured yaw, the NECK bone shares the twist via a model-space Y pre-rotation — body-relative yaw *is* a model-space Y rotation, so no rest-frame knowledge is needed. `SetJoint(HEAD)` propagates to the facial children, carrying the eye bones along (proven in-game: the camera's neck-to-eye arm is measured from the animated eye bones each frame).
+The engine matrices are D3D-style: row-major and row-vector (`clip = p · M`, `VP = View · Proj`). A transform's basis vectors are therefore its rows: `data[0..2]` is right (+X), `data[4..6]` is up (+Y), `data[8..10]` is the +Z basis (forward is -`data[8..10]`), and `data[12..14]` is the translation. The space is right-handed and Y-up (rendering §2.6). An orientation built from a look direction takes `right = normalize(cross(up, fwd))` and `trueUp = cross(fwd, right)`, and places `right`, `trueUp`, `-fwd`, and `pos` in rows 0 to 3.
 
-Build a head orientation from a look direction as follows. The engine matrices are D3D-style — row-major, row-vector (`clip = p · M`, `VP = View · Proj`) — so a transform's basis vectors are its *rows*: `data[0..2]` = right (+X), `data[4..6]` = up (+Y), `data[8..10]` = +Z basis (forward = −`data[8..10]`), `data[12..14]` = translation; right-handed, Y-up (rendering §2.6). glam is column-vector, and `from_cols_array` / `to_cols_array` bridge the two by transposing — which is why the mod's glam matrix math works without an explicit transpose. So build the rotation in glam with `right`, `trueUp`, `−fwd`, `pos` as the *columns* (`right = normalize(cross(up, fwd))`, `trueUp = cross(fwd, right)`) and `to_cols_array` it into the engine matrix.
+## Relation to HumanIK
 
-## Deferred: full-body IK
-
-To make the body follow (crouch, lean, bend down to smell the roses), feed the engine's own HumanIK pass effector targets — `CHumanIK::AddEffectorTargetPosition`, driven inside `UpdatePassFinalizePose_Parallel` **before** `CalculateModelSpacePose`, so HumanIK-target writes must happen *earlier* than the prop-effects seam — or `SetJoint` the whole upper chain post-finalize. The HumanIK route blends with the existing animation and is the cleaner long-term path; it's out of near-term scope.
+The engine's HumanIK pass consumes effector targets inside `UpdatePassFinalizePose_Parallel`, before `CalculateModelSpacePose`. A target queued at `Character::UpdatePropEffects` is therefore too late for the current frame's solve. The HumanIK solve blends with the animated pose, whereas `SetJoint` after finalization replaces the model-space joint outright. The solver, its gate, and the effector ids are in `humanik.md`.

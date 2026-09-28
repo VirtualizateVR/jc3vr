@@ -224,7 +224,7 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
         }
     });
 
-    // The base VolumetricTerrain block (CRenderBlockTerrain) -- dormant in the retail world (the live
+    // The base VolumetricTerrain block (CRenderBlockTerrain) -- dormant in the game world (the live
     // terrain is the volumetric-patch system + the TerrainDetail rock skin), so these engine flags are
     // inert there; kept for other worlds. The #40 detail-budget controls sit at the bottom of this
     // section. Live engine flags, not saved; reset on level reload.
@@ -662,8 +662,8 @@ fn show_unregistered_render_block_types(ui: &mut egui::Ui) {
 
 /// Render the engine render-block-type registry: one row per registered type, name from the type's
 /// own `GetTypeName`, and a checkbox that patches the type's `IsEnabled` vtable slot to a
-/// return-false stub (restored on re-tick or uninject). The retail build compiles the engine's own
-/// `Enable`/`Disable` to no-ops and `IsEnabled` to `return true`, but `CRenderPass::DoDraw` still
+/// return-false stub (restored on re-tick or uninject). The engine's own
+/// `Enable`/`Disable` compile to no-ops and `IsEnabled` to `return true`, but `CRenderPass::DoDraw` still
 /// dispatches `IsEnabled` through the vtable, so the slot patch is the working kill switch.
 fn show_render_block_type_registry(ui: &mut egui::Ui) {
     // SAFETY: the registry is static engine storage; entries are live type singletons registered at

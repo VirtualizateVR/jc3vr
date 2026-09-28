@@ -18,6 +18,8 @@ The `.pyxis` files are the project's ground-truth record of the game's internals
 
 A def's doc-comments describe the game **as it is**: what a function does, what a field means, which engine systems read or write it, the conditions and mechanisms involved. Write them as if the mod did not exist.
 
+**Docs and comments carry no addresses, offsets, or numeric constants.** Function and global addresses, field offsets, vtable slots of game types, state-bit numbers and masks, name hashes, enum values, and action IDs live only in the pyxis defs, and the defs' own doc comments link to the owning item rather than repeating its number. Code comments in the payload name the pyxis symbol. The docs in `docs/` name the pyxis symbol instead, in a code span using its pyxis name, and link its first mention in each section to the [pyxis viewer](https://ferrobrew.github.io/pyxis/) (`https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/<module::path::Type>##field-<name>`, with `func-`, `vfunc-`, `variant-`, or `flag-` for other members). A number that belongs to a format or API the game does not own (Direct3D constants, the DXBC container, numbers inside shader bytecode) stays in the docs. A finding that has not been verified against the release IDB is not bound, and the docs name it without a number and say it is unverified. Docs and comments describe the one build the defs are for: they do not qualify statements as being about "the release build" or compare it with the symbol dump or any other build.
+
 **Never document a downstream (mod-side) use case in a pyxis def.** How jc3vr *uses* a hook — that it clears a flag for VR, widens a projection to cover both eyes, overrides a field to stabilize the view for the HMD — belongs in the payload code that does it, not in the def. The def says what the game does; the payload comment says what we do about it. Mixing the two rots the ground truth (the mod's intent drifts over time; the game's behavior does not) and couples the shared, multi-game defs to this one consumer.
 
 ### pyxis-defs workflow
@@ -41,7 +43,7 @@ A def's doc-comments describe the game **as it is**: what a function does, what 
 - **Shader compilation**: Payload shaders (`.hlsl` files in `payload/src/shaders/`) are compiled to `.dxbc` bytecode and committed alongside their sources. After modifying a shader, recompile with:
   - Windows: `cargo run -p shadergen`
   - Linux: `cargo run -p shadergen --target x86_64-unknown-linux-gnu` (requires `wine` on PATH)
-- **Game shader reverse-engineering**: To extract, disassemble, and interpret the game's own shaders (the `.shader_bundle` files), and for how the mod patches them in memory, see `docs/engine/rendering/shaders.md` and the tooling in `tools/shaders/`.
+- **Game shader reverse-engineering**: To extract, disassemble, and interpret the game's own shaders (the `.shader_bundle` files), see `docs/engine/rendering/shaders.md` and the tooling in `tools/shaders/`. For how the mod patches them in memory, see `docs/mod/rendering/shader-patching.md`.
 
 ---
 

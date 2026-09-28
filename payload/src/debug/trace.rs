@@ -205,7 +205,8 @@ pub enum TraceEvent {
         hist2_mid: f32,
         hist2_buckets: Vec<u32>,
         num_buckets: u32,
-        /// The metering ping-pong selector (`this[168]`), to spot a buffer-swap mismatch under stereo.
+        /// The metering ping-pong selector (`ToneMappingEffect::m_HistogramPingPong`), to spot a
+        /// buffer-swap mismatch under stereo.
         pingpong: u32,
         forced: bool,
     },

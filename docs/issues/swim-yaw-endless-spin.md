@@ -26,32 +26,32 @@ Over the capture: 555 frames within 2° of the target, **147 within 10° of `tar
 
 ## Root cause
 
-The `SetOrientation` chase rewrote the yaw of the matrix passed to `CPfxCharacterInstance::SetOrientation`, extracting the current yaw with a YXZ euler decomposition. **That matrix is not the character's facing frame.** From `UpdateSurfaceMovement` (`0x1407EA78F`):
+The `SetOrientation` chase rewrote the yaw of the matrix passed to [`PfxCharacterInstance::SetOrientation`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::PfxCharacterInstance##func-SetOrientation), extracting the current yaw with a YXZ euler decomposition. **That matrix is not the character's facing frame.** From [`UpdateSurfaceMovement`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/input::swim##func-UpdateSurfaceMovement), with the offsets replaced by field names:
 
 ```c
 if ( v112 <= 0.0 || fsqrt(v135.x² + v136²) <= 0.1 )   // stick neutral / wanted speed ≤ 0.1
-    v129 = CMatrix4f::operator*(a1 + 12420, v186, v181);   // idle  offset
+    v129 = CMatrix4f::operator*(&swim_params->m_SurfaceIdleSwimmingCapsuleOffset, v186, v181);
 else
-    v129 = CMatrix4f::operator*(a1 + 12548, v168, v181);   // crawl offset
+    v129 = CMatrix4f::operator*(&swim_params->m_SurfaceCrawlSwimmingCapsuleOffset, v168, v181);
 CMatrix4f::OrthoNormalize(&v164);
-CPfxCharacterInstance::SetOrientation(*(a1 + 8272), &v164);
+CPfxCharacterInstance::SetOrientation(character->m_PfxCharacter, &v164);
 ```
 
-and `SSwimActionParams::SSwimActionParams` (`0x140779BF0`) gives those offsets their values:
+and [`SwimActionParams::Construct`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::swim_action_params::SwimActionParams##func-Construct) (`SSwimActionParams::SSwimActionParams`) gives those offsets their values:
 
 | Offset | Value |
 |---|---|
-| `m_SurfaceIdleSwimmingCapsuleOffset` | identity |
-| `m_SurfaceCrawlSwimmingCapsuleOffset` | **`RotationX(-1.5707951)`** — exactly −π/2 |
+| [`SwimActionParams::m_SurfaceIdleSwimmingCapsuleOffset`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::swim_action_params::SwimActionParams##field-m_SurfaceIdleSwimmingCapsuleOffset) | identity |
+| [`SwimActionParams::m_SurfaceCrawlSwimmingCapsuleOffset`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::swim_action_params::SwimActionParams##field-m_SurfaceCrawlSwimmingCapsuleOffset) | a rotation of −π/2 about X |
 
 Stationary you get the bare facing matrix and the yaw extraction is valid, so the chase worked. Moving, the game swaps in the prone crawl capsule and the matrix is pitched 90° — **exact gimbal lock for a YXZ euler yaw**, where yaw and roll trade off freely and flip by 180° on noise. The chase's `delta` was garbage and the write landed at `target ± 180`. Wanted speed hovers near the 0.1 threshold, the capsule alternates frame to frame, and the body ping-pongs.
 
 ## The other half: the chase was solving the wrong problem
 
-`DoRotate` (`0x1407754F0`) is called from two places per swim frame, and an earlier reading of the 2016 dump matched the wrong one:
+[`DoRotate`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/physics##func-DoRotate) is called from two places per swim frame, and an earlier reading matched the wrong one:
 
-- **`0x1407EA347`**, directly in `UpdateSurfaceMovement` — output feeds `CMatrix4f::CreateOrientation` at `0x1407EA49E`. **This is the body facing.**
-- **inside `ProcessMotion`** (`0x140775760`, called at `0x1407E9AFC`) — the velocity-direction slerp.
+- directly in `UpdateSurfaceMovement`, where the output feeds [`Matrix4::CreateOrientation`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/types::math::Matrix4##func-CreateOrientation). **This is the body facing.**
+- inside [`ProcessMotion`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/physics##func-ProcessMotion), which `UpdateSurfaceMovement` also calls. This call is the velocity-direction slerp.
 
 So the `DoRotate` and `TransformInputDirToWorldDir` overrides already reached the facing: the transform's output becomes `DoRotate`'s target while moving, and `DoRotate` turns the body. The `SetOrientation` chase was redundant on top of a mechanism that already worked — and it was the only thing that broke.
 

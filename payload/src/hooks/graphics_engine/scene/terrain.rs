@@ -13,7 +13,7 @@
 //! functions are patched to `shipped * scale` (through the patcher, so they auto-revert on
 //! uninject), and the two setup types are destroyed and re-created so the larger buffers go live —
 //! required because injection happens after the engine has already created them, and these types'
-//! `Recreate` is a no-op in the release build. Applied automatically at the first frame start after
+//! `Recreate` is a no-op. Applied automatically at the first frame start after
 //! injection and re-appliable from the debug UI. See
 //! [`StereoConfig::terrain_detail_budget_scale`](crate::stereo::config::StereoConfig).
 
@@ -100,7 +100,7 @@ const BUDGET_SITES: [(u64, u32); 5] = [
 ];
 
 /// If an apply was requested, patch the detail-budget buffer sizes to `shipped * scale` and
-/// re-create the two terrain setup types so the new sizes take effect. Their release-build
+/// re-create the two terrain setup types so the new sizes take effect. Their
 /// `Recreate` is a no-op, so this goes through the same `Destroy` + `Create` pair `RegisterType`
 /// runs at startup, with the render engine's own resource context. Call once per frame on the game
 /// thread with no draw in flight; the immediates auto-revert on uninject.
@@ -121,7 +121,7 @@ pub fn process_budget_request() {
         };
         for (site, shipped) in BUDGET_SITES {
             // SAFETY: each site is the imm32 operand of a `mov [mem], imm32` inside the setup
-            // types' `Create` functions (release-IDB-verified); the patcher restores the shipped
+            // types' `Create` functions (verified); the patcher restores the shipped
             // bytes on uninject.
             unsafe {
                 patcher.patch(site as usize, &(shipped * scale).to_le_bytes());

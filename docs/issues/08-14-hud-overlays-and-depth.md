@@ -104,7 +104,7 @@ Bugs found and fixed along the way, in order:
 
 1. **Wrong vtable slot** (constraint 6): three identical "instant lockup"
    rounds -- every partitioned render's first act called the context-shutdown
-   thunk at slot 28 believing it was `GetDisplayHandle` (26). Diagnosed by
+   thunk [`MovieImpl::ShutdownRendering`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##vfunc-ShutdownRendering) believing it was [`MovieImpl::GetDisplayHandle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##vfunc-GetDisplayHandle). Diagnosed by
    walking the live hung process:
    the spinning thread was `SyncRender`'s flag poll; the deferred lock's
    owner was the UI worker; its live stack ended in `Event::Wait` under
@@ -183,11 +183,11 @@ rendering individual elements at different depths.
 The HUD is driven by `CHUDUI`, a singleton that inherits from `CUIMenu` →
 `CUIBase`. The rendering pipeline:
 
-1. **`CUIManager::StartRender`** (vtable +0x08) — kicks off the async UI render
+1. **[`UIManager::StartRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-StartRender)** (virtual) — kicks off the async UI render
    fragment on a separate thread.
-2. **`CUIManager::SyncRender`** (vtable +0x10) — barrier, waits for the UI
+2. **[`UIManager::SyncRender`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-SyncRender)** (virtual) — barrier, waits for the UI
    render thread.
-3. **`CUIManager::Submit`** (vtable +0x18) — locks the master context, flushes
+3. **[`UIManager::Submit`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-Submit)** (virtual) — locks the master context, flushes
    UI draws via `m_RenderHAL->Submit()`.
 4. **`CUIManager::Render`** — the actual render: walks the Scaleform render
    tree (`TreeRoot`), calls `HAL::Draw` for each display handle, drawing all
@@ -222,7 +222,7 @@ The game ships separate `.gfx` files (found via the Gibbed file lists):
 `CUIManager` loads `ui/root.gfx` as a single `MovieDef` at init:
 
 ```c
-Movie = Scaleform::GFx::Loader::CreateMovie(loader, "ui/root.gfx", 0x42, 0);
+Movie = Scaleform::GFx::Loader::CreateMovie(loader, "ui/root.gfx", load_flags, 0);
 this->m_MovieDef = Movie;
 // ... later:
 m_MovieDef->CreateInstance(m_MovieDef, ...);  // creates the single m_Movie
@@ -251,7 +251,7 @@ The engine does have a mechanism for truly separate movies:
 `ui/dyn_root.gfx`:
 
 ```c
-Movie = Scaleform::GFx::Loader::CreateMovie(loader, "ui/dyn_root.gfx", 0x42, 0);
+Movie = Scaleform::GFx::Loader::CreateMovie(loader, "ui/dyn_root.gfx", load_flags, 0);
 m_MovieDef->CreateInstance(m_MovieDef, ...);  // creates its own m_Movie
 ```
 
@@ -264,7 +264,7 @@ movies at different depths — used for in-world Scaleform screens.
 ### The HUD update loop
 
 `CHUDUI::Update` (called from `CUIManager`'s update cycle) drives all HUD
-elements per frame. The main loop (dump: `CHUDUI.cpp`, line ~28755):
+elements per frame. The main loop:
 
 ```c
 CHUDUI::UpdateDirectionalDamageIndicators(this, v6);
@@ -280,7 +280,7 @@ CHUDUI::UpdateMissileWarning(this);
 ```
 
 This is gated by `m_State` (an `EHUDState` enum): when the state is
-`HUD_HIDE_ALL` (0x2) or `HUD_HIDE_ALL_NON_OVERLAY` (0x5), most updates are
+[`HUDState::HUD_HIDE_ALL`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDState##variant-HUD_HIDE_ALL) or [`HUDState::HUD_HIDE_ALL_NON_OVERLAY`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDState##variant-HUD_HIDE_ALL_NON_OVERLAY), most updates are
 skipped. `HUD_HIDE_ALL_NON_OVERLAY` is the state used during pause menus and
 comm-link — it hides the main HUD but keeps overlay elements (damage
 indicators, warnings) visible.
@@ -294,7 +294,7 @@ misbehave on a floating panel. Each is invoked via `CHUDUI::Invoke`:
 |---|---|---|---|
 | `UpdateCharacterDmgIndicators` | `UpdateDirectionalDamageIndicators` | Directional damage arrows | Partial |
 | `UpdateMechDmgIndicators` | `UpdateDirectionalDamageIndicators` | Same, for mechs | Partial |
-| `OnOmniDamage` | `OnOmniDamage` | Screen-wide damage flash (`m_GrabScreenTimer = 2.0`) | **Yes** |
+| `OnOmniDamage` | `OnOmniDamage` | Screen-wide damage flash (sets [`UIManager::m_GrabScreenTimer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_GrabScreenTimer) to [`HUDUI::OMNI_DAMAGE_GRAB_SCREEN_TIME`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI::OMNI_DAMAGE_GRAB_SCREEN_TIME)) | **Yes** |
 | `OnPlayerDogeDamage` | `OnPlayerDogeDamage` | Damage type indicator (bullet, explosion, fire) | Partial |
 | `OnPlayerDidDamage` | `OnPlayerDidDamage` | Hit marker | No (small) |
 | `UpdateHealth` | `UpdateHealth` | Health bar update (drives near-death) | No |
@@ -305,7 +305,7 @@ misbehave on a floating panel. Each is invoked via `CHUDUI::Invoke`:
 
 ### The damage indicator data flow
 
-When the player takes damage, `CCharacter` (dump line ~39779) calls
+When the player takes damage, `CCharacter` calls
 `CHUDUI::OnPlayerDogeDamage` / `CHUDUI::OnOmniDamage` /
 `CHUDUI::OnPlayerDidDamage` directly. Simultaneously,
 `CPlayerHealthEffects::OnDamage` (line 404) creates or updates
@@ -478,8 +478,7 @@ to per-element-depth rendering without Scaleform authoring tools.
   on the same `MovieDef` (the `ResourceWeakLib::BindResourceKey` cache returns
   the same `MovieDef`), but the second `Movie` starts from frame 0 with an
   empty display list.
-- **Load `hud.gfx`/`overlay.gfx` standalone** — the `LoadDisableImports`
-  flag (`0x100000`) skips import resolution. But these files may be symbol
+- **Load `hud.gfx`/`overlay.gfx` standalone** — the [`Loader::LOAD_DISABLE_IMPORTS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::Loader::LOAD_DISABLE_IMPORTS) load flag skips import resolution. But these files may be symbol
   libraries (not standalone movies) — loading them standalone may produce a
   movie with no visible content. Uncertain without inspecting the `.gfx` file
   contents.
@@ -646,22 +645,21 @@ shipped (see the world-to-screen subsection above).
    quads at real depth. Use OpenXR haptics for damage feedback. Draw a subtle
    red vignette on the panel edges for low health.
 
-## Key addresses and symbols
+## Key symbols
 
-Release ground truth recovered for the implementation (all bound in
-`pyxis-defs`):
+Ground truth recovered for the implementation, all bound in the pyxis defs ([`ui::ui_manager`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::ui_manager) and [`ui::scaleform`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/ui::scaleform)):
 
-| Symbol | Address / offset | Notes |
-|---|---|---|
-| `CUIManager::Render` | `0x141007B70` | `IUIManager` vtable slot 4; the split detour target. |
-| `UIManager::m_DeferredRenderLock` | `+0x12B8` | Held by both `PreRender` (`Advance`+`Capture`) and `Render`; re-entrant. |
-| `UIManager::m_MainThreadId` | `+0x44` | The capture thread to hand ownership back to. |
-| Render gates | `+0x212`, `+0x213`, `+0x147F` | `m_RenderReady` / `m_RenderActive` / `m_RenderingEnabled`. |
-| `UIManager::m_Movie` | `+0x12E8` | The `GFx::MovieImpl` (the trio was previously bound 0x10 low). |
-| `MovieImpl::pASMovieRoot` | `+0x18` | The AS3 `MovieRoot` (SetVariable/Invoke/display tree). |
-| `MovieImpl` vtable | slots 24-27, 48 | `Advance`, `Capture`, `GetDisplayHandle`, `SetCaptureThread`, `GetHeap`. |
-| `MovieRoot` vtable | `0x1426216B0` | Standard `ASMovieRootBase` layout: `GetDisplayObjectsTree` 35, `SetVariable` 49, `GetVariable` 50, `Invoke` 57. |
-| `CUIManager::Convert3DCoordsDefault` | `0x140F899A0` | The grapple reticle's default-VP world-to-screen; hooked for panel reprojection + aim depth. |
+| Symbol | Notes |
+|---|---|
+| [`UIManager::Render`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##vfunc-Render) / [`UIManager::RenderImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##func-RenderImpl) | `CUIManager::Render`, a virtual of `IUIManager`; the split detour target. |
+| [`UIManager::m_DeferredRenderLock`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_DeferredRenderLock) | Held by both `PreRender` (`Advance`+`Capture`) and `Render`; re-entrant. |
+| [`UIManager::m_CurrentCaptureThread`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_CurrentCaptureThread) | The capture thread to hand ownership back to. |
+| Render gates | [`UIManager::m_RenderReady`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_RenderReady), [`UIManager::m_RenderActive`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_RenderActive), and [`UIManager::m_RenderingEnabled`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_RenderingEnabled). |
+| [`UIManager::m_Movie`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_Movie) | The `GFx::MovieImpl`. An earlier def bound `m_Movie` and the fields next to it at the wrong offsets. |
+| [`MovieImpl::pASMovieRoot`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##field-pASMovieRoot) | The AS3 `MovieRoot` (SetVariable/Invoke/display tree). |
+| `MovieImpl` virtuals | [`MovieImpl::Advance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##vfunc-Advance), [`MovieImpl::Capture`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##vfunc-Capture), [`MovieImpl::GetDisplayHandle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##vfunc-GetDisplayHandle), [`MovieImpl::SetCaptureThread`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##vfunc-SetCaptureThread), and [`MovieImpl::GetHeap`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##vfunc-GetHeap). |
+| `MovieRoot` vtable ([`Movie::VFTABLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::Movie::VFTABLE)) | Standard `ASMovieRootBase` layout: [`Movie::GetDisplayObjectsTree`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::Movie##vfunc-GetDisplayObjectsTree), [`Movie::SetVariable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::Movie##func-SetVariable), [`Movie::GetVariable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::Movie##func-GetVariable), and [`Movie::Invoke`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::Movie##func-Invoke). |
+| [`UIManager::Convert3DCoordsDefault`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##func-Convert3DCoordsDefault) | The grapple reticle's default-VP world-to-screen; hooked for panel reprojection + aim depth. |
 
 Original static-analysis reference:
 
@@ -672,7 +670,7 @@ Original static-analysis reference:
 | `CUIBase::SetMovie` | Can reassign a `CUIBase`'s movie to a different instance. |
 | `CRenderToTextureUI` | The engine's pattern for separate movies — loads `ui/dyn_root.gfx`. |
 | `Scaleform::GFx::Loader::CreateMovie` | Creates a `MovieDef` from a `.gfx` file path. |
-| `Scaleform::GFx::Loader::LoadDisableImports` | Flag `0x100000` — skip import resolution. |
+| `Scaleform::GFx::Loader::LoadDisableImports` | Load flag [`Loader::LOAD_DISABLE_IMPORTS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::Loader::LOAD_DISABLE_IMPORTS) — skip import resolution. |
 | `MovieDef::CreateInstance` | Creates a `Movie` instance from a `MovieDef`. |
 | `Scaleform::GFx::Movie::SetVariable` | Sets an AS3 variable — use for `_visible` toggling. |
 | `Scaleform::GFx::Movie::GetVariable` | Reads an AS3 variable — use for clip-path probing. |
@@ -689,6 +687,6 @@ Original static-analysis reference:
 | `s_disable_health_ui` | Global bool (`_data.cpp`). Suppresses health/damage UI. |
 | `CPlayerHealthEffects::OnDamage` | Where damage indicators are created — hook for alternative feedback. |
 | `CPlayerHealthEffects::Update` | Where near-death state and effect level are computed. |
-| `CCharacter::IsInDrivingVehicleState` | `0x140_77E_AF0` — vehicle state detection for distance presets. |
+| [`Character::IsInDrivingVehicleState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInDrivingVehicleState) | Vehicle state detection for distance presets. |
 | `GraphicsEngine::m_MainDepthTexture` | `D32FS8` reverse-Z depth — for depth-buffer probing. |
 | `CUIManager` singleton | `Base::CSingle<CUIManager>::Instance`. |

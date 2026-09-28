@@ -130,9 +130,9 @@ fn device_resize_buffers(device: *mut HDevice_t, width: u32, height: u32) -> boo
 fn create_render_setups(this: *mut GraphicsEngine, device_info: *const DeviceInfo) -> bool {
     log_hook_thread("CreateRenderSetups", &CREATE_RENDER_SETUPS_THREAD);
     let returned = CREATE_RENDER_SETUPS.get().unwrap().call(this, device_info);
-    // Deliberately *not* gated on `returned`: the release build never sets a return value. Its C++
-    // signature says `bool` and the symbol-dump build ends in `return 1`, but release codegen dropped
-    // that -- the function's last instruction before the epilogue is the `CreateRenderSetup` call, so
+    // Deliberately *not* gated on `returned`: the game never sets a return value. Its C++
+    // signature says `bool`, but the compiled code has no final `return 1` -- the function's last
+    // instruction before the epilogue is the `CreateRenderSetup` call, so
     // `al` is the low byte of an aligned pointer. Read as a `bool` that is reliably even, and a
     // bit-0 test on it is therefore always false. Gating on it silently disabled the substitution.
     //

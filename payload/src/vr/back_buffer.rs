@@ -10,7 +10,7 @@
 //! ## Ownership, and why the order matters
 //!
 //! [`Graphics::DestroySurface`](jc3gi::graphics_engine::surface::DestroySurface) has no already-freed
-//! guard on this build: destroying a surface twice is an unguarded use-after-free that corrupts
+//! guard: destroying a surface twice is an unguarded use-after-free that corrupts
 //! silently and surfaces somewhere unrelated, later. So there is exactly one ownership rule here, and
 //! it is not negotiable:
 //!
@@ -77,7 +77,7 @@ static INSTALLED: AtomicBool = AtomicBool::new(false);
 static BYPASS_RESIZE_SUBSTITUTE: AtomicBool = AtomicBool::new(false);
 
 /// The name the substitute texture is created under. The resource tracking that consumed it is
-/// compiled out of this build, so it is only ever seen by someone reading a memory dump.
+/// compiled out of the game, so it is only ever seen by someone reading a memory dump.
 const BACKING_NAME: &std::ffi::CStr = c"VrBackBuffer";
 
 /// The packed `CreateRenderSetupParams::m_Flags` the engine uses for both of its back-buffer

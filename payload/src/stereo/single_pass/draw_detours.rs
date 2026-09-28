@@ -123,7 +123,7 @@ pub(super) unsafe extern "system" fn draw_detour(
 ///
 /// # How this list was derived
 ///
-/// Statically, from the release binary rather than from a capture. The engine funnels every
+/// Statically, from the binary rather than from a capture. The engine funnels every
 /// non-indexed submission through one wrapper (`Graphics::Draw`), so its call sites are the complete
 /// set of blocks that can reach slot 13 -- 60-odd of them. Each was classified by reading its `Draw`:
 /// a block that binds a vertex stream and submits a world transform is geometry, one that submits a
