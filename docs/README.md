@@ -72,7 +72,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 ### input/
 
 - [input.md](mod/input/input.md) — how the mod taps, consumes, and injects the game's input.
-- [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md) — the motion-controller and roomscale scope: phases, seams, risks, and per-mode input tables.
+- [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md) — the motion-controller and roomscale plan of record: the continuous-body principles, the aim-state pin, controller-owned hands and their tiers, per-hand aiming, weapon handling, per-mode bindings, roomscale, and the milestones.
 
 ## issues/
 
