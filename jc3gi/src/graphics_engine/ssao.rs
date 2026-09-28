@@ -21,7 +21,8 @@ pub struct SSAOPass {
     _field_9a8: [u8; 8],
     /// Enables the temporal filter, blending the current AO against the previous frame's result
     /// through the history ping-pong. Defaults on. Also gates the render block's final composite draw,
-    /// so clearing it disables AO entirely -- prefer `m_FirstPass` to reset the history.
+    /// so clearing it disables AO entirely. The history reset without that side effect is
+    /// [`m_FirstPass`](crate::graphics_engine::ssao::SSAOPass::m_FirstPass).
     pub m_EnableTemporalFilter: bool,
     pub m_EnableDisocclusionTest: bool,
     pub m_EnableDeltaWeighting: bool,

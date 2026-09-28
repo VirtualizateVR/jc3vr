@@ -1,8 +1,224 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(8))]
-/// `CPfxCharacterInstance`: the character's physics-side body instance, owned by `CCharacter`
-/// through a `boost::shared_ptr`. Only the members needed so far are bound.
-pub struct PfxCharacterInstance {}
+/// A [`CastRayInfoBase`](crate::physics::CastRayInfoBase) that resolves the hit material on demand (`CCastRayInfo`).
+pub struct CastRayInfo {}
+impl CastRayInfo {
+    pub const GetHitMaterial_ADDRESS: usize = 0x1402B3BA0;
+    /// `CCastRayInfo::GetHitMaterial` (a virtual): the hit shape's game material
+    /// (`EGameMaterialId`), looked up through the physics system's world.
+    pub unsafe fn GetHitMaterial(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetHitMaterial_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<CastRayInfo> for CastRayInfo {
+    fn as_ref(&self) -> &CastRayInfo {
+        self
+    }
+}
+impl std::convert::AsMut<CastRayInfo> for CastRayInfo {
+    fn as_mut(&mut self) -> &mut CastRayInfo {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The result of a ray query (`CCastRayInfoBase`): the hit position, normal, and fraction, the hit
+/// body and instance, and the hit material's pass flags. Only the methods are bound.
+pub struct CastRayInfoBase {}
+impl CastRayInfoBase {
+    pub const Reset_ADDRESS: usize = 0x1402558C0;
+    /// Clears the result for reuse.
+    pub unsafe fn Reset(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Reset_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const DidHitBulletPassMaterial_ADDRESS: usize = 0x14023BDF0;
+    /// Whether the hit material lets bullets pass
+    /// ([`BULLET_PASS`](crate::physics::MaterialPassFlags::BULLET_PASS)); false for two special material ids.
+    pub unsafe fn DidHitBulletPassMaterial(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::DidHitBulletPassMaterial_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<CastRayInfoBase> for CastRayInfoBase {
+    fn as_ref(&self) -> &CastRayInfoBase {
+        self
+    }
+}
+impl std::convert::AsMut<CastRayInfoBase> for CastRayInfoBase {
+    fn as_mut(&mut self) -> &mut CastRayInfoBase {
+        self
+    }
+}
+#[repr(C, align(4))]
+/// The Havok-facing input of a character proxy (`CPfxCharacterInstance::CCharacterInput`), read by
+/// the physics step to drive the proxy.
+pub struct CharacterInput {
+    pub jump: bool,
+    /// Whether [`wantedVelocity`](crate::physics::CharacterInput::wantedVelocity) is game-controlled. The on-foot locomotion
+    /// task sets it when it takes its velocity from the blackboard's code-driven path and clears it
+    /// otherwise.
+    pub gameControledVelocity: bool,
+    _field_2: [u8; 2],
+    /// The velocity the proxy should move at (world space). The on-foot locomotion task
+    /// (`NStateTask_MovementLocomotionTask::Update`) writes its solved velocity here every tick,
+    /// including standing idle.
+    pub wantedVelocity: crate::types::math::Vector3,
+}
+fn _CharacterInput_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], CharacterInput>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl CharacterInput {}
+impl std::convert::AsRef<CharacterInput> for CharacterInput {
+    fn as_ref(&self) -> &CharacterInput {
+        self
+    }
+}
+impl std::convert::AsMut<CharacterInput> for CharacterInput {
+    fn as_mut(&mut self) -> &mut CharacterInput {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// A [`RaycastFilter`](crate::physics::RaycastFilter) whose ignore mask is set pass by pass (`CIgnoreMaterialFlagFilter`).
+pub struct IgnoreMaterialFlagFilter {
+    pub base: crate::physics::RaycastFilter,
+}
+fn _IgnoreMaterialFlagFilter_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC0], IgnoreMaterialFlagFilter>([0u8; 0xC0]);
+    }
+    unreachable!()
+}
+impl IgnoreMaterialFlagFilter {
+    /// `CRaycastFilter::CRaycastFilter`: constructs the filter with its two material masks, the
+    /// instance to ignore (may be null), and the world (null selects [`PhysicsSystem::m_World`](crate::physics::PhysicsSystem::m_World)).
+    pub unsafe fn Construct(
+        &mut self,
+        ignore_material_mask: crate::physics::MaterialPassFlags,
+        force_material_mask: crate::physics::MaterialPassFlags,
+        ignore_instance: *mut ::std::ffi::c_void,
+        world: *const crate::physics::hknpWorld,
+    ) -> *mut crate::physics::RaycastFilter {
+        unsafe {
+            self.base
+                .Construct(
+                    ignore_material_mask,
+                    force_material_mask,
+                    ignore_instance,
+                    world,
+                )
+        }
+    }
+    pub const SetIgnoreBulletPass_ADDRESS: usize = 0x140B86840;
+    /// Sets or clears [`BULLET_PASS`](crate::physics::MaterialPassFlags::BULLET_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreBulletPass(&mut self, ignore: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, ignore: bool) = ::std::mem::transmute(
+                Self::SetIgnoreBulletPass_ADDRESS,
+            );
+            f(self as *mut Self as _, ignore)
+        }
+    }
+    pub const SetIgnoreRayPass_ADDRESS: usize = 0x140B86860;
+    /// Sets or clears [`RAY_PASS`](crate::physics::MaterialPassFlags::RAY_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreRayPass(&mut self, ignore: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, ignore: bool) = ::std::mem::transmute(
+                Self::SetIgnoreRayPass_ADDRESS,
+            );
+            f(self as *mut Self as _, ignore)
+        }
+    }
+    pub const SetIgnoreCameraPass_ADDRESS: usize = 0x140B86880;
+    /// Sets or clears [`CAMERA_PASS`](crate::physics::MaterialPassFlags::CAMERA_PASS) in the ignore mask.
+    pub unsafe fn SetIgnoreCameraPass(&mut self, ignore: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, ignore: bool) = ::std::mem::transmute(
+                Self::SetIgnoreCameraPass_ADDRESS,
+            );
+            f(self as *mut Self as _, ignore)
+        }
+    }
+}
+impl std::convert::AsRef<crate::physics::RaycastFilter> for IgnoreMaterialFlagFilter {
+    fn as_ref(&self) -> &crate::physics::RaycastFilter {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::physics::RaycastFilter> for IgnoreMaterialFlagFilter {
+    fn as_mut(&mut self) -> &mut crate::physics::RaycastFilter {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<IgnoreMaterialFlagFilter> for IgnoreMaterialFlagFilter {
+    fn as_ref(&self) -> &IgnoreMaterialFlagFilter {
+        self
+    }
+}
+impl std::convert::AsMut<IgnoreMaterialFlagFilter> for IgnoreMaterialFlagFilter {
+    fn as_mut(&mut self) -> &mut IgnoreMaterialFlagFilter {
+        self
+    }
+}
+crate::__bitflags! {
+    #[doc =
+    " Material pass bits of a [`RaycastFilter`](crate::physics::RaycastFilter)'s material masks. Game materials carry per-pass"]
+    #[doc =
+    " \"holey\" flags (a bullet passes foliage, a ray passes glass, and similar); a filter that sets a"]
+    #[doc = " bit in its ignore mask does not stop at materials flagged for that pass."]
+    pub struct MaterialPassFlags : u32 { const BULLET_PASS = 32usize as _; const
+    CAMERA_PASS = 64usize as _; const RAY_PASS = 128usize as _; }
+}
+fn _MaterialPassFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], MaterialPassFlags>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(C, align(8))]
+/// `CPfxCharacterInstance`: the character's physics-side body instance (the Havok character proxy),
+/// owned by `CCharacter` through a `boost::shared_ptr`. Only some members are bound.
+pub struct PfxCharacterInstance {
+    _field_0: [u8; 56],
+    /// The proxy input the physics step reads; see [`CharacterInput`](crate::physics::CharacterInput).
+    pub m_Input: crate::physics::CharacterInput,
+    _field_48: [u8; 128],
+    /// The current proxy state (`CPfxCharacterInstance::EProxyState`), which selects the proxy's
+    /// collision shape. Written by [`SetProxyState`](crate::physics::PfxCharacterInstance::SetProxyState).
+    pub m_ProxyState: i32,
+    _field_cc: [u8; 4],
+    /// The Havok character rigid body (`hknpCharacterRigidBody*`), which holds the body id that
+    /// [`GetCharacterRigidBodyId`](crate::physics::PfxCharacterInstance::GetCharacterRigidBodyId) reads.
+    pub m_CharacterRigidBody: *mut ::std::ffi::c_void,
+    _field_d8: [u8; 16],
+    /// The character rigid-body listener (`CCustomCharacterRBListener*`).
+    pub m_CharacterRBListener: *mut ::std::ffi::c_void,
+    /// The owning character (`IPfxCharacter*`). Its `GetSharedPfxCharacterSettings` virtual returns
+    /// the shared settings that hold the per-state shape table.
+    pub m_Owner: *mut ::std::ffi::c_void,
+}
+fn _PfxCharacterInstance_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xF8], PfxCharacterInstance>([0u8; 0xF8]);
+    }
+    unreachable!()
+}
 impl PfxCharacterInstance {
     pub const SetOrientation_ADDRESS: usize = 0x140239100;
     /// Sets the physics body's rotation from the rotation part of `m` (via a quaternion
@@ -31,6 +247,49 @@ impl PfxCharacterInstance {
             f(self as *const Self as _, out)
         }
     }
+    pub const SetProxyState_ADDRESS: usize = 0x140239580;
+    /// Switches the proxy to `state` when it differs from [`m_ProxyState`](crate::physics::PfxCharacterInstance::m_ProxyState):
+    /// stores it, fetches the shared settings through [`m_Owner`](crate::physics::PfxCharacterInstance::m_Owner), swaps the live
+    /// body's shape to the settings' shape for that state ([`hknpWorld::setBodyShape`](crate::physics::hknpWorld::setBodyShape)), and
+    /// copies the state's per-shape byte into the rigid-body listener
+    /// ([`m_CharacterRBListener`](crate::physics::PfxCharacterInstance::m_CharacterRBListener)). The capsule
+    /// dimensions live in those pre-built shapes.
+    pub unsafe fn SetProxyState(&mut self, state: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, state: i32) = ::std::mem::transmute(
+                Self::SetProxyState_ADDRESS,
+            );
+            f(self as *mut Self as _, state)
+        }
+    }
+    pub const GetCharacterRigidBodyId_ADDRESS: usize = 0x14024DA40;
+    /// Writes the Havok body id of [`m_CharacterRigidBody`](crate::physics::PfxCharacterInstance::m_CharacterRigidBody) to `out`
+    /// ([`INVALID_BODY_ID`](crate::physics::PfxCharacterInstance::INVALID_BODY_ID) when there is no body) and returns `out`.
+    pub unsafe fn GetCharacterRigidBodyId(&self, out: *mut u32) -> *mut u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                out: *mut u32,
+            ) -> *mut u32 = ::std::mem::transmute(Self::GetCharacterRigidBodyId_ADDRESS);
+            f(self as *const Self as _, out)
+        }
+    }
+    pub const BuildDefaultCharacterContext_ADDRESS: usize = 0x14024D370;
+    /// Builds the Havok character context for the proxy: a character-state manager with the
+    /// on-ground, in-air, and jumping states registered. It does not set the capsule dimensions.
+    pub unsafe fn BuildDefaultCharacterContext(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::BuildDefaultCharacterContext_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl PfxCharacterInstance {
+    /// Havok's invalid body id, which [`GetCharacterRigidBodyId`](crate::physics::PfxCharacterInstance::GetCharacterRigidBodyId)
+    /// reports when there is no body.
+    pub const INVALID_BODY_ID: u32 = 2147483647;
 }
 impl std::convert::AsRef<PfxCharacterInstance> for PfxCharacterInstance {
     fn as_ref(&self) -> &PfxCharacterInstance {
@@ -40,6 +299,499 @@ impl std::convert::AsRef<PfxCharacterInstance> for PfxCharacterInstance {
 impl std::convert::AsMut<PfxCharacterInstance> for PfxCharacterInstance {
     fn as_mut(&mut self) -> &mut PfxCharacterInstance {
         self
+    }
+}
+#[repr(C, align(8))]
+/// The physics system (`CPhysicsSystem`), a `Base::CSingle` singleton that owns the Havok world and
+/// serves the engine's scene queries. The queries are sim-phase calls against the live Havok world.
+/// Only some members are bound.
+pub struct PhysicsSystem {
+    _field_0: [u8; 48],
+    /// The Havok world.
+    pub m_World: *mut crate::physics::hknpWorld,
+}
+fn _PhysicsSystem_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x38], PhysicsSystem>([0u8; 0x38]);
+    }
+    unreachable!()
+}
+impl PhysicsSystem {
+    pub unsafe fn get() -> Option<&'static mut Self> {
+        unsafe {
+            let ptr: *mut Self = *(5417845024usize as *mut *mut Self);
+            ptr.as_mut()
+        }
+    }
+}
+impl PhysicsSystem {
+    pub const CastRay_ADDRESS: usize = 0x140286740;
+    /// The general ray query: casts `ray` (world space, normalized direction) from `min_fraction`
+    /// out to `max_distance` along its direction against collision `layer`, returning whether it
+    /// hit. `info`, when non-null, receives the closest hit; `filter`, when non-null, replaces the
+    /// default hit filter (and can exclude materials or an instance); `flags` is a
+    /// collision-filter-info word, `0` for a plain query. Backed by [`hknpWorld::castRay`](crate::physics::hknpWorld::castRay).
+    pub unsafe fn CastRay(
+        &mut self,
+        ray: *const crate::physics::Ray3,
+        min_fraction: f32,
+        max_distance: f32,
+        info: *mut crate::physics::CastRayInfoBase,
+        filter: *mut crate::physics::RaycastFilter,
+        flags: u32,
+        layer: i32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ray: *const crate::physics::Ray3,
+                min_fraction: f32,
+                max_distance: f32,
+                info: *mut crate::physics::CastRayInfoBase,
+                filter: *mut crate::physics::RaycastFilter,
+                flags: u32,
+                layer: i32,
+            ) -> bool = ::std::mem::transmute(Self::CastRay_ADDRESS);
+            f(
+                self as *mut Self as _,
+                ray,
+                min_fraction,
+                max_distance,
+                info,
+                filter,
+                flags,
+                layer,
+            )
+        }
+    }
+    pub const CastRaySimple_ADDRESS: usize = 0x140286BE0;
+    /// Whether the segment from `start` to `end` is blocked: builds the ray from the two points and
+    /// calls [`CastRay`](crate::physics::PhysicsSystem::CastRay) with no hit info, the default filter, and
+    /// [`QUERY_LAYER`](crate::physics::PhysicsSystem::QUERY_LAYER).
+    pub unsafe fn CastRaySimple(
+        &mut self,
+        start: *const crate::types::math::Vector3,
+        end: *const crate::types::math::Vector3,
+        flags: u32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                start: *const crate::types::math::Vector3,
+                end: *const crate::types::math::Vector3,
+                flags: u32,
+            ) -> bool = ::std::mem::transmute(Self::CastRaySimple_ADDRESS);
+            f(self as *mut Self as _, start, end, flags)
+        }
+    }
+    pub const CastRayTerrain_ADDRESS: usize = 0x140286CE0;
+    /// A ray query against the terrain only, with the parameters of [`CastRay`](crate::physics::PhysicsSystem::CastRay).
+    pub unsafe fn CastRayTerrain(
+        &mut self,
+        ray: *const crate::physics::Ray3,
+        min_fraction: f32,
+        max_distance: f32,
+        info: *mut crate::physics::CastRayInfoBase,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ray: *const crate::physics::Ray3,
+                min_fraction: f32,
+                max_distance: f32,
+                info: *mut crate::physics::CastRayInfoBase,
+            ) -> bool = ::std::mem::transmute(Self::CastRayTerrain_ADDRESS);
+            f(self as *mut Self as _, ray, min_fraction, max_distance, info)
+        }
+    }
+    pub const CastRayWaterSurface_ADDRESS: usize = 0x14023C150;
+    /// Intersects the segment from `start` to `end` with the water surface, writing the hit point
+    /// to `hit` and returning whether there was one.
+    pub unsafe fn CastRayWaterSurface(
+        &mut self,
+        start: *const crate::types::math::Vector3,
+        end: *const crate::types::math::Vector3,
+        hit: *mut crate::types::math::Vector3,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                start: *const crate::types::math::Vector3,
+                end: *const crate::types::math::Vector3,
+                hit: *mut crate::types::math::Vector3,
+            ) -> bool = ::std::mem::transmute(Self::CastRayWaterSurface_ADDRESS);
+            f(self as *mut Self as _, start, end, hit)
+        }
+    }
+    pub const CastSphere_ADDRESS: usize = 0x140202C90;
+    /// Sweeps a sphere of `radius` from `start` to `end`, reporting hits to `collector` (an
+    /// `hknpCollisionQueryCollector`).
+    pub unsafe fn CastSphere(
+        &mut self,
+        start: *const crate::types::math::Vector3,
+        end: *const crate::types::math::Vector3,
+        radius: f32,
+        p4: f32,
+        collector: *mut ::std::ffi::c_void,
+        filter_info: u32,
+        p7: f32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                start: *const crate::types::math::Vector3,
+                end: *const crate::types::math::Vector3,
+                radius: f32,
+                p4: f32,
+                collector: *mut ::std::ffi::c_void,
+                filter_info: u32,
+                p7: f32,
+            ) -> bool = ::std::mem::transmute(Self::CastSphere_ADDRESS);
+            f(self as *mut Self as _, start, end, radius, p4, collector, filter_info, p7)
+        }
+    }
+    pub const CastShape_ADDRESS: usize = 0x1401F0890;
+    /// Sweeps an arbitrary Havok shape (`hknpShape*`) with the rotation `rotation` (`hkRotationf`)
+    /// from `start` to `end`, reporting hits to `collector`.
+    pub unsafe fn CastShape(
+        &mut self,
+        start: *const crate::types::math::Vector3,
+        end: *const crate::types::math::Vector3,
+        p3: f32,
+        shape: *const ::std::ffi::c_void,
+        rotation: *const ::std::ffi::c_void,
+        collector: *mut ::std::ffi::c_void,
+        filter_info: u32,
+        p8: f32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                start: *const crate::types::math::Vector3,
+                end: *const crate::types::math::Vector3,
+                p3: f32,
+                shape: *const ::std::ffi::c_void,
+                rotation: *const ::std::ffi::c_void,
+                collector: *mut ::std::ffi::c_void,
+                filter_info: u32,
+                p8: f32,
+            ) -> bool = ::std::mem::transmute(Self::CastShape_ADDRESS);
+            f(
+                self as *mut Self as _,
+                start,
+                end,
+                p3,
+                shape,
+                rotation,
+                collector,
+                filter_info,
+                p8,
+            )
+        }
+    }
+}
+impl PhysicsSystem {
+    /// The collision layer [`CastRaySimple`](crate::physics::PhysicsSystem::CastRaySimple) hardcodes, and the one the
+    /// player's direct-aim query passes to [`CastRay`](crate::physics::PhysicsSystem::CastRay).
+    pub const QUERY_LAYER: i32 = 21;
+}
+impl std::convert::AsRef<PhysicsSystem> for PhysicsSystem {
+    fn as_ref(&self) -> &PhysicsSystem {
+        self
+    }
+}
+impl std::convert::AsMut<PhysicsSystem> for PhysicsSystem {
+    fn as_mut(&mut self) -> &mut PhysicsSystem {
+        self
+    }
+}
+/// `CPhysicsSystem::s_WaterQueryProxy`: the water query singleton buoyancy, water interaction,
+/// vehicle fin forces, and the water-surface ray query read water heights from.
+pub unsafe fn get_PhysicsSystem_s_WaterQueryProxy() -> &'static mut *mut crate::physics::WaterProxy {
+    unsafe { &mut *(0x142EDC230 as *mut *mut crate::physics::WaterProxy) }
+}
+#[repr(C, align(8))]
+/// The ragdoll's proxy phantom (`CRagdollProxyPhantom`), the shape set that stands in for a
+/// character's ragdoll bodies in hit tests. Only one method is bound.
+pub struct RagdollProxyPhantom {}
+impl RagdollProxyPhantom {
+    pub const GetHitNameHash_ADDRESS: usize = 0x1403E48E0;
+    /// The name hash of the ragdoll part a ray hit (the hit's shape key matched against the
+    /// phantom's shapes), or `0` when the hit is not one of them. `CCharacter::OnDamage` uses it to
+    /// find the body part a hit struck.
+    pub unsafe fn GetHitNameHash(
+        &mut self,
+        info: *const crate::physics::CastRayInfoBase,
+    ) -> u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                info: *const crate::physics::CastRayInfoBase,
+            ) -> u32 = ::std::mem::transmute(Self::GetHitNameHash_ADDRESS);
+            f(self as *mut Self as _, info)
+        }
+    }
+}
+impl std::convert::AsRef<RagdollProxyPhantom> for RagdollProxyPhantom {
+    fn as_ref(&self) -> &RagdollProxyPhantom {
+        self
+    }
+}
+impl std::convert::AsMut<RagdollProxyPhantom> for RagdollProxyPhantom {
+    fn as_mut(&mut self) -> &mut RagdollProxyPhantom {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// A ray (`CRay3`): an origin and a direction, both world space when passed to
+/// [`PhysicsSystem::CastRay`](crate::physics::PhysicsSystem::CastRay).
+pub struct Ray3 {
+    pub Origin: crate::types::math::Vector3,
+    /// The ray direction; the queries expect it normalized.
+    pub Direction: crate::types::math::Vector3,
+}
+fn _Ray3_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], Ray3>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl Ray3 {}
+impl std::convert::AsRef<Ray3> for Ray3 {
+    fn as_ref(&self) -> &Ray3 {
+        self
+    }
+}
+impl std::convert::AsMut<Ray3> for Ray3 {
+    fn as_mut(&mut self) -> &mut Ray3 {
+        self
+    }
+}
+#[repr(C, align(16))]
+/// The engine's closest-hit ray filter (`CRaycastFilter`, derived from Havok's
+/// `hknpClosestHitCollector`): collects the closest hit while skipping ignored materials and one
+/// ignored instance.
+pub struct RaycastFilter {
+    _field_0: [u8; 144],
+    /// Materials whose pass flags are in this mask do not count as hits.
+    pub m_IgnoreMaterialMask: crate::physics::MaterialPassFlags,
+    /// Materials whose pass flags are in this mask always count as hits.
+    pub m_ForceMaterialMask: crate::physics::MaterialPassFlags,
+    /// An instance the query never hits (`IPfxInstance*`), such as the caster's own proxy.
+    pub m_IgnorePfxInstance: *mut ::std::ffi::c_void,
+    _field_a0: [u8; 16],
+    /// The Havok world the filter resolves bodies in; the physics system's world when constructed
+    /// with null.
+    pub m_World: *const crate::physics::hknpWorld,
+    _field_b8: [u8; 8],
+}
+fn _RaycastFilter_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC0], RaycastFilter>([0u8; 0xC0]);
+    }
+    unreachable!()
+}
+impl RaycastFilter {
+    pub const Construct_ADDRESS: usize = 0x1401FCBA0;
+    /// `CRaycastFilter::CRaycastFilter`: constructs the filter with its two material masks, the
+    /// instance to ignore (may be null), and the world (null selects [`PhysicsSystem::m_World`](crate::physics::PhysicsSystem::m_World)).
+    pub unsafe fn Construct(
+        &mut self,
+        ignore_material_mask: crate::physics::MaterialPassFlags,
+        force_material_mask: crate::physics::MaterialPassFlags,
+        ignore_instance: *mut ::std::ffi::c_void,
+        world: *const crate::physics::hknpWorld,
+    ) -> *mut crate::physics::RaycastFilter {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ignore_material_mask: crate::physics::MaterialPassFlags,
+                force_material_mask: crate::physics::MaterialPassFlags,
+                ignore_instance: *mut ::std::ffi::c_void,
+                world: *const crate::physics::hknpWorld,
+            ) -> *mut crate::physics::RaycastFilter = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(
+                self as *mut Self as _,
+                ignore_material_mask,
+                force_material_mask,
+                ignore_instance,
+                world,
+            )
+        }
+    }
+}
+impl std::convert::AsRef<RaycastFilter> for RaycastFilter {
+    fn as_ref(&self) -> &RaycastFilter {
+        self
+    }
+}
+impl std::convert::AsMut<RaycastFilter> for RaycastFilter {
+    fn as_mut(&mut self) -> &mut RaycastFilter {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The water query interface (`CPhysicsSystem::IWaterProxy`) through which physics code reads
+/// water heights, reached through [`PhysicsSystem_s_WaterQueryProxy`](get_PhysicsSystem_s_WaterQueryProxy). Only the first slot is bound.
+pub struct WaterProxy {
+    vftable: *const crate::physics::WaterProxyVftable,
+}
+fn _WaterProxy_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], WaterProxy>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl WaterProxy {
+    pub fn vftable(&self) -> *const crate::physics::WaterProxyVftable {
+        self.vftable as *const crate::physics::WaterProxyVftable
+    }
+    /// The world sea level, the height of the open-sea water plane.
+    /// [`PhysicsSystem::CastRayWaterSurface`](crate::physics::PhysicsSystem::CastRayWaterSurface) tests a segment against it after the water boxes.
+    pub unsafe fn GetWorldSeaLevel(&mut self) -> f32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetWorldSeaLevel).read();
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<WaterProxy> for WaterProxy {
+    fn as_ref(&self) -> &WaterProxy {
+        self
+    }
+}
+impl std::convert::AsMut<WaterProxy> for WaterProxy {
+    fn as_mut(&mut self) -> &mut WaterProxy {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct WaterProxyVftable {
+    /// The world sea level, the height of the open-sea water plane.
+    /// [`PhysicsSystem::CastRayWaterSurface`](crate::physics::PhysicsSystem::CastRayWaterSurface) tests a segment against it after the water boxes.
+    pub GetWorldSeaLevel: unsafe extern "system" fn(
+        this: *mut crate::physics::WaterProxy,
+    ) -> f32,
+}
+fn _WaterProxyVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], WaterProxyVftable>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl WaterProxyVftable {}
+impl std::convert::AsRef<WaterProxyVftable> for WaterProxyVftable {
+    fn as_ref(&self) -> &WaterProxyVftable {
+        self
+    }
+}
+impl std::convert::AsMut<WaterProxyVftable> for WaterProxyVftable {
+    fn as_mut(&mut self) -> &mut WaterProxyVftable {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The Havok physics world (`hknpWorld`). Only some members are bound.
+pub struct hknpWorld {}
+impl hknpWorld {
+    pub const castRay_ADDRESS: usize = 0x141500BE0;
+    /// Casts a ray query (`hknpRayCastQuery`) and reports hits to `collector`
+    /// (`hknpCollisionQueryCollector`).
+    pub unsafe fn castRay(
+        &self,
+        query: *const ::std::ffi::c_void,
+        collector: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                query: *const ::std::ffi::c_void,
+                collector: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::castRay_ADDRESS);
+            f(self as *const Self as _, query, collector)
+        }
+    }
+    pub const setBodyShape_ADDRESS: usize = 0x1414CF370;
+    /// Replaces the shape (`hknpShape*`) of the body `body_id` on the live world.
+    pub unsafe fn setBodyShape(
+        &mut self,
+        body_id: u32,
+        shape: *const ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body_id: u32,
+                shape: *const ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::setBodyShape_ADDRESS);
+            f(self as *mut Self as _, body_id, shape)
+        }
+    }
+}
+impl std::convert::AsRef<hknpWorld> for hknpWorld {
+    fn as_ref(&self) -> &hknpWorld {
+        self
+    }
+}
+impl std::convert::AsMut<hknpWorld> for hknpWorld {
+    fn as_mut(&mut self) -> &mut hknpWorld {
+        self
+    }
+}
+pub const SweptSphereCast_ADDRESS: usize = 0x140738670;
+/// `SweptSphereCast`: a free-function sphere sweep that fills `result` (`CCastResult`). The
+/// meaning of its scalar parameters is not established.
+pub unsafe fn SweptSphereCast(
+    p0: f32,
+    p1: f32,
+    p2: f32,
+    p3: f32,
+    p4: f32,
+    p5: f32,
+    v0: *const crate::types::math::Vector3,
+    v1: *const crate::types::math::Vector3,
+    p8: f32,
+    p9: bool,
+    result: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            p0: f32,
+            p1: f32,
+            p2: f32,
+            p3: f32,
+            p4: f32,
+            p5: f32,
+            v0: *const crate::types::math::Vector3,
+            v1: *const crate::types::math::Vector3,
+            p8: f32,
+            p9: bool,
+            result: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(SweptSphereCast_ADDRESS);
+        f(p0, p1, p2, p3, p4, p5, v0, v1, p8, p9, result)
+    }
+}
+pub const SlerpAroundAxis_ADDRESS: usize = 0x140775620;
+/// Rotates `from` toward `to` by the fraction `t` of the angle between them (about the axis of the
+/// shortest-arc rotation), writing the result to `out`. When the two directions are within the
+/// `0.99` dot-product threshold it writes `to` unchanged. The swim movement cores call it.
+pub unsafe fn SlerpAroundAxis(
+    from: *const crate::types::math::Vector3,
+    to: *const crate::types::math::Vector3,
+    t: f32,
+    out: *mut crate::types::math::Vector3,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            from: *const crate::types::math::Vector3,
+            to: *const crate::types::math::Vector3,
+            t: f32,
+            out: *mut crate::types::math::Vector3,
+        ) = ::std::mem::transmute(SlerpAroundAxis_ADDRESS);
+        f(from, to, t, out)
     }
 }
 pub const DoRotate_ADDRESS: usize = 0x1407754F0;

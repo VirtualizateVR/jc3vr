@@ -1,7 +1,7 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(4))]
 /// One heat level's tuning (`CHeatManager::SLevelDef`), loaded from the heat settings. Partial:
-/// only the point threshold is mapped; the rest of the 0x7C-byte record is pursuer and vehicle
+/// only the point threshold is mapped; the rest of the record is pursuer and vehicle
 /// budgets, timers, and the level's send/receive events.
 pub struct HeatLevelDef {
     /// The heat-point total at which the target's heat reaches this level.
@@ -105,8 +105,8 @@ impl HeatManager {
     pub const SetLevelCap_ADDRESS: usize = 0x140A50B90;
     /// Sets [`m_LevelCap`](crate::heat_manager::HeatManager::m_LevelCap), clamped to `0..=MAX_LEVEL`, and if the current level
     /// exceeds it, lowers the level to the cap and trims the target's heat points to just below the
-    /// next threshold. Use a direct write of [`LEVEL_CAP_NONE`](crate::heat_manager::HeatManager::LEVEL_CAP_NONE) to remove
-    /// the cap; this clamps negatives to zero.
+    /// next threshold. It clamps negative caps to zero, so it cannot set
+    /// [`LEVEL_CAP_NONE`](crate::heat_manager::HeatManager::LEVEL_CAP_NONE); `CHeatManager::Reset` does.
     pub unsafe fn SetLevelCap(&mut self, cap: i32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, cap: i32) = ::std::mem::transmute(

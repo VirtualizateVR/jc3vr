@@ -86,7 +86,8 @@ fn _ScreenPos_size_check() {
 /// render rectangle, [`SetMovieViewport`](crate::ui::ui_manager::UIManager::SetMovieViewport) sets the Scaleform movie
 /// viewport, and [`ComputeSafeArea`](crate::ui::ui_manager::UIManager::ComputeSafeArea) derives the UI safe area.
 pub struct UIManager {
-    _field_0: [u8; 40],
+    vftable: *const crate::ui::ui_manager::UIManagerVftable,
+    _field_8: [u8; 32],
     /// The horizontal mouse letterbox offset from the engine's `MovieScaleInfo`
     /// (`m_MouseDeltaX`), in movie-viewport pixels.
     /// [`GetMovieSpaceMouseCursor`](crate::ui::ui_manager::UIManager::GetMovieSpaceMouseCursor) maps a movie-viewport
@@ -117,8 +118,9 @@ pub struct UIManager {
     /// `PreRender` claims it for the update thread each frame via `CUIManager::SetCaptureThread`,
     /// which writes this field and the movie's capture thread together. `CUIBase::Invoke` runs the
     /// AVM immediately only when the calling thread matches this field, and queues into the UI's
-    /// command queue otherwise -- so a hook that borrows capture ownership must write this field
-    /// too, or game-thread invokes keep mutating the display list concurrently.
+    /// command queue otherwise. It does not consult the movie's own capture thread: if the movie's
+    /// capture thread changes without this field, game-thread invokes still run immediately and
+    /// mutate the display list concurrently with the new capture owner.
     pub m_CurrentCaptureThread: u32,
     _field_48: [u8; 108],
     /// The last mouse position's x, in window-client pixels. [`WndProc`](crate::window::WndProc) writes it on every
@@ -129,7 +131,11 @@ pub struct UIManager {
     /// The last mouse position's y, in window-client pixels; see
     /// [`m_MouseX`](crate::ui::ui_manager::UIManager::m_MouseX).
     pub m_MouseY: i32,
-    _field_bc: [u8; 342],
+    _field_bc: [u8; 24],
+    /// The grab-screen timer (seconds); `CHUDUI::OnOmniDamage` sets it to
+    /// [`OMNI_DAMAGE_GRAB_SCREEN_TIME`](crate::ui::hud_ui::HUDUI::OMNI_DAMAGE_GRAB_SCREEN_TIME).
+    pub m_GrabScreenTimer: f32,
+    _field_d8: [u8; 314],
     /// Whether the render system is initialized. One of the three gates `Render` checks before
     /// drawing.
     pub m_RenderReady: bool,
@@ -137,13 +143,13 @@ pub struct UIManager {
     pub m_RenderActive: bool,
     _field_214: [u8; 12],
     /// The active `CSteering`, whose action map [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents)
-    /// polls for the mouse-button actions (`MOUSE1` = 249, `MOUSE2` = 250).
+    /// polls for the mouse-button actions ([`MOUSE1`](crate::input::input_action_map::Action::MOUSE1) and
+    /// [`MOUSE2`](crate::input::input_action_map::Action::MOUSE2)).
     pub m_Steering: *mut ::std::ffi::c_void,
     _field_228: [u8; 4240],
     /// The lock serializing the UI update (`PreRender`: `Advance` + `Capture`) against the UI
     /// render (`Render`, `RenderOffScreenTextures`). A Win32 critical section, so re-entrant on
-    /// the owning thread: a `Render` hook can hold it across visibility writes, captures, and
-    /// calls to the original (which re-enters it).
+    /// the owning thread.
     pub m_DeferredRenderLock: *mut crate::graphics_engine::device::CRITICAL_SECTION,
     _field_12c0: [u8; 24],
     /// The Scaleform `GFx::Loader`, created in `InitializeSystem`. Loads `.gfx` files via
@@ -174,7 +180,7 @@ pub struct UIManager {
     _field_1398: [u8; 229],
     /// Whether the player is currently driving the UI with a gamepad. While set,
     /// [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) parks the Scaleform mouse at
-    /// `(-1000, -1000)` and [`MousePointerVisibility`](crate::ui::ui_manager::UIManager::MousePointerVisibility) hides
+    /// [`GAMEPAD_PARKED_MOUSE_POSITION`](crate::ui::ui_manager::UIManager::GAMEPAD_PARKED_MOUSE_POSITION) on both axes and [`MousePointerVisibility`](crate::ui::ui_manager::UIManager::MousePointerVisibility) hides
     /// the overlay cursor.
     pub m_IsUsingGamepad: bool,
     _field_147e: [u8; 1],
@@ -215,19 +221,17 @@ impl UIManager {
     }
 }
 impl UIManager {
-    pub const Render_ADDRESS: usize = 0x141007B70;
-    /// Binds the UI render target: builds a [`RenderTargetData`](crate::ui::ui_manager::RenderTargetData) from the engine surface's
-    /// render-target and depth-stencil views via [`RenderTargetData::UpdateData`](crate::ui::ui_manager::RenderTargetData::UpdateData). Called at startup
-    /// and on every device or resolution reset; `a2` carries the target side length (the buffer is
-    /// square: width = height = a2). This only creates the render buffer -- the Scaleform movie's
-    /// viewport is set separately by [`SetMovieViewport`](crate::ui::ui_manager::UIManager::SetMovieViewport).
+    pub fn vftable(&self) -> *const crate::ui::ui_manager::UIManagerVftable {
+        self.vftable as *const crate::ui::ui_manager::UIManagerVftable
+    }
+    pub const RenderImpl_ADDRESS: usize = 0x141007B70;
     /// The UI render: takes [`m_DeferredRenderLock`](crate::ui::ui_manager::UIManager::m_DeferredRenderLock), checks the
     /// three render gates, retargets the Scaleform render-thread ids, drains the thread command
     /// queue, binds the display render target, and draws the movie's latest captured display tree
     /// (`GetDisplayHandle` -> `RTHandle::NextCapture` -> `HAL::Draw`) within a
     /// `BeginFrame`/`BeginScene` pair. Runs on a CPU-fragment worker (kicked by `StartRender`,
-    /// joined by `SyncRender`). `IUIManager` vtable slot 4.
-    pub unsafe fn Render(
+    /// joined by `SyncRender`).
+    pub unsafe fn RenderImpl(
         &mut self,
         context: *mut crate::graphics_engine::graphics_engine::HContext_t,
     ) {
@@ -235,11 +239,16 @@ impl UIManager {
             let f: unsafe extern "system" fn(
                 this: *mut Self,
                 context: *mut crate::graphics_engine::graphics_engine::HContext_t,
-            ) = ::std::mem::transmute(Self::Render_ADDRESS);
+            ) = ::std::mem::transmute(Self::RenderImpl_ADDRESS);
             f(self as *mut Self as _, context)
         }
     }
     pub const InitPlatformRT_ADDRESS: usize = 0x140F696E0;
+    /// Binds the UI render target: builds a [`RenderTargetData`](crate::ui::ui_manager::RenderTargetData) from the engine surface's
+    /// render-target and depth-stencil views via [`RenderTargetData::UpdateData`](crate::ui::ui_manager::RenderTargetData::UpdateData). Called at startup
+    /// and on every device or resolution reset; `a2` carries the target side length (the buffer is
+    /// square: width = height = a2). This only creates the render buffer -- the Scaleform movie's
+    /// viewport is set separately by [`SetMovieViewport`](crate::ui::ui_manager::UIManager::SetMovieViewport).
     pub unsafe fn InitPlatformRT(&mut self, a2: i32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, a2: i32) = ::std::mem::transmute(
@@ -248,14 +257,14 @@ impl UIManager {
             f(self as *mut Self as _, a2)
         }
     }
-    pub const RestoreAfterReset_ADDRESS: usize = 0x140FA9C70;
+    pub const RestoreAfterResetImpl_ADDRESS: usize = 0x140FA9C70;
     /// Re-runs [`InitPlatformRT`](crate::ui::ui_manager::UIManager::InitPlatformRT) after a device or resolution reset. Also
     /// recomputes the movie size, sets the movie viewport, and recomputes the safe area. Gated by an
-    /// internal reset counter, so a direct call may no-op if the counter is not at 1.
-    pub unsafe fn RestoreAfterReset(&mut self) {
+    /// internal reset counter: it does nothing unless the counter is at 1.
+    pub unsafe fn RestoreAfterResetImpl(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
-                Self::RestoreAfterReset_ADDRESS,
+                Self::RestoreAfterResetImpl_ADDRESS,
             );
             f(self as *mut Self as _)
         }
@@ -331,9 +340,7 @@ impl UIManager {
     pub const Convert3DCoordsDefault_ADDRESS: usize = 0x140F899A0;
     /// The default-VP world-to-screen wrapper `CHUDUI::UpdateGrappleReticle` uses for the grapple
     /// reticle (its only callers): fetches the render camera's view-projection internally and
-    /// forwards to [`Convert3DCoords`](crate::ui::ui_manager::UIManager::Convert3DCoords). Because the VP is not a
-    /// parameter, the grapple reticle bypasses the floating panel's marker reprojection unless
-    /// this wrapper is hooked.
+    /// forwards to [`Convert3DCoords`](crate::ui::ui_manager::UIManager::Convert3DCoords).
     pub unsafe fn Convert3DCoordsDefault(
         &mut self,
         world: *const crate::types::math::Vector3,
@@ -421,9 +428,9 @@ impl UIManager {
             f(x, y, pos, min_x, max_x, min_y, max_y)
         }
     }
-    pub const StartRender_ADDRESS: usize = 0x140F1B030;
+    pub const StartRenderImpl_ADDRESS: usize = 0x140F1B030;
     /// Begins the UI render job, posting to the async render thread.
-    pub unsafe fn StartRender(
+    pub unsafe fn StartRenderImpl(
         &mut self,
         context: *const crate::graphics_engine::graphics_engine::HContext_t,
     ) {
@@ -431,43 +438,43 @@ impl UIManager {
             let f: unsafe extern "system" fn(
                 this: *mut Self,
                 context: *const crate::graphics_engine::graphics_engine::HContext_t,
-            ) = ::std::mem::transmute(Self::StartRender_ADDRESS);
+            ) = ::std::mem::transmute(Self::StartRenderImpl_ADDRESS);
             f(self as *mut Self as _, context)
         }
     }
-    pub const SyncRender_ADDRESS: usize = 0x140F1B0C0;
+    pub const SyncRenderImpl_ADDRESS: usize = 0x140F1B0C0;
     /// A barrier that spin-waits until the async UI render job has finished.
-    pub unsafe fn SyncRender(&mut self) {
+    pub unsafe fn SyncRenderImpl(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
-                Self::SyncRender_ADDRESS,
+                Self::SyncRenderImpl_ADDRESS,
             );
             f(self as *mut Self as _)
         }
     }
-    pub const Submit_ADDRESS: usize = 0x140F1B0D0;
+    pub const SubmitImpl_ADDRESS: usize = 0x140F1B0D0;
     /// The final commit: submits the render HAL's output under a graphics scoped lock.
-    pub unsafe fn Submit(&mut self) {
+    pub unsafe fn SubmitImpl(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
-                Self::Submit_ADDRESS,
+                Self::SubmitImpl_ADDRESS,
             );
             f(self as *mut Self as _)
         }
     }
-    pub const RenderStaticBackGround_ADDRESS: usize = 0x140F46C20;
+    pub const RenderStaticBackGroundImpl_ADDRESS: usize = 0x140F46C20;
     /// Draws the pause / menu static background.
-    pub unsafe fn RenderStaticBackGround(&mut self) {
+    pub unsafe fn RenderStaticBackGroundImpl(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
-                Self::RenderStaticBackGround_ADDRESS,
+                Self::RenderStaticBackGroundImpl_ADDRESS,
             );
             f(self as *mut Self as _)
         }
     }
-    pub const RenderOffScreenTextures_ADDRESS: usize = 0x1410076C0;
+    pub const RenderOffScreenTexturesImpl_ADDRESS: usize = 0x1410076C0;
     /// Renders Scaleform UI to offscreen textures for in-world screens. This is not the HUD.
-    pub unsafe fn RenderOffScreenTextures(
+    pub unsafe fn RenderOffScreenTexturesImpl(
         &mut self,
         ctx: *mut *mut crate::graphics_engine::graphics_engine::HContext_t,
     ) {
@@ -475,7 +482,7 @@ impl UIManager {
             let f: unsafe extern "system" fn(
                 this: *mut Self,
                 ctx: *mut *mut crate::graphics_engine::graphics_engine::HContext_t,
-            ) = ::std::mem::transmute(Self::RenderOffScreenTextures_ADDRESS);
+            ) = ::std::mem::transmute(Self::RenderOffScreenTexturesImpl_ADDRESS);
             f(self as *mut Self as _, ctx)
         }
     }
@@ -536,10 +543,13 @@ impl UIManager {
     /// [`MovieImpl::HandleEvent`](crate::ui::scaleform::MovieImpl::HandleEvent): a move event only when
     /// the DirectInput mouse reported a non-zero x or y delta this frame (also repositioning the
     /// overlay cursor sprite via `COverlayUI::SetMouseCursorPosition`), a wheel event from the z
-    /// delta, and down/up events from the steering action map's `MOUSE1` (249) / `MOUSE2` (250)
-    /// effector states (2 = pressed edge, 4 = released edge). When
+    /// delta, and down/up events from the steering action map's
+    /// [`MOUSE1`](crate::input::input_action_map::Action::MOUSE1) /
+    /// [`MOUSE2`](crate::input::input_action_map::Action::MOUSE2) effector states
+    /// ([`Clicked`](crate::input::input_action_map::EffectorState::Clicked) for the pressed edge,
+    /// [`Released`](crate::input::input_action_map::EffectorState::Released) for the released edge). When
     /// [`m_IsUsingGamepad`](crate::ui::ui_manager::UIManager::m_IsUsingGamepad) is set it instead parks the mouse at
-    /// `(-1000, -1000)`. Returns false without the movie, the steering, or a mouse device.
+    /// [`GAMEPAD_PARKED_MOUSE_POSITION`](crate::ui::ui_manager::UIManager::GAMEPAD_PARKED_MOUSE_POSITION) on both axes. Returns false without the movie, the steering, or a mouse device.
     pub unsafe fn SendMouseEvents(&mut self, steering: *mut ::std::ffi::c_void) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(
@@ -596,6 +606,97 @@ impl UIManager {
             f(self as *mut Self as _)
         }
     }
+    /// Returns the UI render context.
+    pub unsafe fn GetUIContext(&mut self) -> *mut ::std::ffi::c_void {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetUIContext).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// See [`StartRenderImpl`](crate::ui::ui_manager::UIManager::StartRenderImpl).
+    pub unsafe fn StartRender(
+        &mut self,
+        context: *const crate::graphics_engine::graphics_engine::HContext_t,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).StartRender).read();
+            f(self as *mut Self as _, context)
+        }
+    }
+    /// See [`SyncRenderImpl`](crate::ui::ui_manager::UIManager::SyncRenderImpl).
+    pub unsafe fn SyncRender(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).SyncRender).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// See [`SubmitImpl`](crate::ui::ui_manager::UIManager::SubmitImpl).
+    pub unsafe fn Submit(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Submit).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// See [`RenderImpl`](crate::ui::ui_manager::UIManager::RenderImpl).
+    pub unsafe fn Render(
+        &mut self,
+        context: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Render).read();
+            f(self as *mut Self as _, context)
+        }
+    }
+    /// See [`RenderOffScreenTexturesImpl`](crate::ui::ui_manager::UIManager::RenderOffScreenTexturesImpl).
+    pub unsafe fn RenderOffScreenTextures(
+        &mut self,
+        ctx: *mut *mut crate::graphics_engine::graphics_engine::HContext_t,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).RenderOffScreenTextures).read();
+            f(self as *mut Self as _, ctx)
+        }
+    }
+    /// See [`RenderStaticBackGroundImpl`](crate::ui::ui_manager::UIManager::RenderStaticBackGroundImpl).
+    pub unsafe fn RenderStaticBackGround(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).RenderStaticBackGround).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Releases device-dependent UI resources before a device reset.
+    pub unsafe fn PrepareForReset(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).PrepareForReset).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// See [`RestoreAfterResetImpl`](crate::ui::ui_manager::UIManager::RestoreAfterResetImpl).
+    pub unsafe fn RestoreAfterReset(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).RestoreAfterReset).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Shows the UI.
+    pub unsafe fn Show(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Show).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Hides the UI.
+    pub unsafe fn Hide(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Hide).read();
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl UIManager {
+    /// The x and y at which [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) places the Scaleform mouse
+    /// while [`m_IsUsingGamepad`](crate::ui::ui_manager::UIManager::m_IsUsingGamepad) is set.
+    pub const GAMEPAD_PARKED_MOUSE_POSITION: f32 = -1000.0;
 }
 impl std::convert::AsRef<UIManager> for UIManager {
     fn as_ref(&self) -> &UIManager {
@@ -604,6 +705,67 @@ impl std::convert::AsRef<UIManager> for UIManager {
 }
 impl std::convert::AsMut<UIManager> for UIManager {
     fn as_mut(&mut self) -> &mut UIManager {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct UIManagerVftable {
+    /// Returns the UI render context.
+    pub GetUIContext: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+    ) -> *mut ::std::ffi::c_void,
+    /// See [`StartRenderImpl`](crate::ui::ui_manager::UIManager::StartRenderImpl).
+    pub StartRender: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+        context: *const crate::graphics_engine::graphics_engine::HContext_t,
+    ),
+    /// See [`SyncRenderImpl`](crate::ui::ui_manager::UIManager::SyncRenderImpl).
+    pub SyncRender: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+    ),
+    /// See [`SubmitImpl`](crate::ui::ui_manager::UIManager::SubmitImpl).
+    pub Submit: unsafe extern "system" fn(this: *mut crate::ui::ui_manager::UIManager),
+    /// See [`RenderImpl`](crate::ui::ui_manager::UIManager::RenderImpl).
+    pub Render: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+        context: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    ),
+    /// See [`RenderOffScreenTexturesImpl`](crate::ui::ui_manager::UIManager::RenderOffScreenTexturesImpl).
+    pub RenderOffScreenTextures: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+        ctx: *mut *mut crate::graphics_engine::graphics_engine::HContext_t,
+    ),
+    /// See [`RenderStaticBackGroundImpl`](crate::ui::ui_manager::UIManager::RenderStaticBackGroundImpl).
+    pub RenderStaticBackGround: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+    ),
+    /// Releases device-dependent UI resources before a device reset.
+    pub PrepareForReset: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+    ),
+    /// See [`RestoreAfterResetImpl`](crate::ui::ui_manager::UIManager::RestoreAfterResetImpl).
+    pub RestoreAfterReset: unsafe extern "system" fn(
+        this: *mut crate::ui::ui_manager::UIManager,
+    ),
+    /// Shows the UI.
+    pub Show: unsafe extern "system" fn(this: *mut crate::ui::ui_manager::UIManager),
+    /// Hides the UI.
+    pub Hide: unsafe extern "system" fn(this: *mut crate::ui::ui_manager::UIManager),
+}
+fn _UIManagerVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x58], UIManagerVftable>([0u8; 0x58]);
+    }
+    unreachable!()
+}
+impl UIManagerVftable {}
+impl std::convert::AsRef<UIManagerVftable> for UIManagerVftable {
+    fn as_ref(&self) -> &UIManagerVftable {
+        self
+    }
+}
+impl std::convert::AsMut<UIManagerVftable> for UIManagerVftable {
+    fn as_mut(&mut self) -> &mut UIManagerVftable {
         self
     }
 }

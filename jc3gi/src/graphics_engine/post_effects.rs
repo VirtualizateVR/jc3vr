@@ -444,16 +444,31 @@ impl std::convert::AsMut<PostEffectContext> for PostEffectContext {
 }
 #[repr(C, align(8))]
 pub struct PostEffectsManager {
-    _field_0: [u8; 526],
+    _field_0: [u8; 272],
+    /// The anti-aliasing effect, which [`ApplySubsampleJitter`](crate::graphics_engine::post_effects::PostEffectsManager::ApplySubsampleJitter) forwards
+    /// to.
+    pub m_AntiAliasing: *mut crate::graphics_engine::post_effects::AntiAliasingEffect,
+    _field_118: [u8; 246],
     /// Master enable for the post-effects chain. When clear, [`DepthOfFieldEffect::Apply`](crate::graphics_engine::post_effects::DepthOfFieldEffect::Apply) swaps the
     /// full composite (exposure, grading, depth of field) for the tonemap-only or passthrough
     /// shader, and the manager skips the sun halo, fade, and global-pass enqueue.
     pub m_Enabled: bool,
-    _field_20f: [u8; 1],
+    _field_20f: [u8; 113],
+    /// The sRGB views of the post chain's full-screen temporary textures, one per ring slot.
+    pub m_FullscreenSrgbTempTexture: [*mut crate::graphics_engine::graphics_engine::HTexture_t; 3],
+    /// The linear views of the post chain's full-screen temporary textures, one per ring slot: the
+    /// slot-indexed results the effects hand along the chain.
+    pub m_FullscreenLinearTempTexture: [*mut crate::graphics_engine::graphics_engine::HTexture_t; 3],
+    _field_2b0: [u8; 96],
+    /// The high-precision composite velocity texture SMAA's temporal blend reads.
+    pub m_HighPrecisionCompositeVelocityTexture: *mut crate::graphics_engine::graphics_engine::HTexture_t,
+    _field_318: [u8; 384],
+    /// The render setup the chain's final copy draws into.
+    pub m_TargetRenderSetup: *mut crate::graphics_engine::graphics_engine::HRenderSetup_t,
 }
 fn _PostEffectsManager_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x210], PostEffectsManager>([0u8; 0x210]);
+        ::std::mem::transmute::<[u8; 0x4A0], PostEffectsManager>([0u8; 0x4A0]);
     }
     unreachable!()
 }
@@ -555,10 +570,21 @@ impl PostEffectsManager {
     }
 }
 impl PostEffectsManager {
+    /// The number of full-screen temporary textures in the post chain's slot ring
+    /// (`s_FullscreenTempTextureCount`); effects advance the slot as
+    /// `(slot + 1) % FULLSCREEN_TEMP_TEXTURE_COUNT`.
+    pub const FULLSCREEN_TEMP_TEXTURE_COUNT: u32 = 3;
     /// The slot-base the slot-returning effects' result textures live at in the manager's texture
-    /// array: a stage's current result is `CTX[slot + 83]`, where `CTX` is the manager argument the
-    /// post block passes to the effect chain and `slot` is the effect's declared slot index.
+    /// array: a stage's current result is `CTX[slot + RESULT_TEXTURE_SLOT_BASE]` (an entry of
+    /// [`m_FullscreenLinearTempTexture`](crate::graphics_engine::post_effects::PostEffectsManager::m_FullscreenLinearTempTexture)), where `CTX` is the
+    /// manager argument the post block passes to the effect chain and `slot` is the effect's declared
+    /// slot index.
     pub const RESULT_TEXTURE_SLOT_BASE: u64 = 83;
+    /// The qword index of [`m_FullscreenSrgbTempTexture`](crate::graphics_engine::post_effects::PostEffectsManager::m_FullscreenSrgbTempTexture) in the
+    /// manager: the sRGB view of the slot's result is `CTX[slot + SRGB_RESULT_TEXTURE_SLOT_BASE]`.
+    /// SMAA's edge detection and
+    /// final blend read the current slot through it.
+    pub const SRGB_RESULT_TEXTURE_SLOT_BASE: u64 = 80;
 }
 impl std::convert::AsRef<PostEffectsManager> for PostEffectsManager {
     fn as_ref(&self) -> &PostEffectsManager {
@@ -578,7 +604,9 @@ impl std::convert::AsMut<PostEffectsManager> for PostEffectsManager {
 ///
 /// It threads a single result-texture slot index through the slot-returning effects
 /// ([`DepthOfFieldEffect`](crate::graphics_engine::post_effects::DepthOfFieldEffect), [`MotionBlurEffect`](crate::graphics_engine::post_effects::MotionBlurEffect), [`PlayerDamageEffect`](crate::graphics_engine::post_effects::PlayerDamageEffect), [`AntiAliasingEffect`](crate::graphics_engine::post_effects::AntiAliasingEffect)),
-/// hopping between the three fullscreen temp textures.
+/// moving between the
+/// [`FULLSCREEN_TEMP_TEXTURE_COUNT`](crate::graphics_engine::post_effects::PostEffectsManager::FULLSCREEN_TEMP_TEXTURE_COUNT) full-screen
+/// temporary textures.
 pub struct RenderBlockPostEffects {}
 impl RenderBlockPostEffects {
     pub const Draw_ADDRESS: usize = 0x14016A260;
@@ -679,6 +707,26 @@ fn _ToneMappingTechnique_size_check() {
         ::std::mem::transmute::<[u8; 0x4], ToneMappingTechnique>([0u8; 0x4]);
     }
     unreachable!()
+}
+/// The stencil bits SMAA's edge detection writes and its blend pass tests (`g_EdgeStencilBitMask`,
+/// statically initialised in the module image).
+pub unsafe fn get_edge_stencil_bit_mask() -> &'static mut u8 {
+    unsafe { &mut *(0x142D3A6FE as *mut u8) }
+}
+/// Whether SMAA's edge-detection pass marks detected edges in the stencil buffer
+/// (`g_EnableEdgeStencil`, default set), so the blend pass runs only where the stencil matches.
+pub unsafe fn get_edge_stencil_enabled() -> &'static mut bool {
+    unsafe { &mut *(0x142D3A6F3 as *mut bool) }
+}
+/// The scale applied to [`jittered_samples`](get_jittered_samples) (`g_JitterScaleFactor`).
+pub unsafe fn get_jitter_scale_factor() -> &'static mut f32 {
+    unsafe { &mut *(0x142D3A708 as *mut f32) }
+}
+/// The temporal anti-aliasing (SMAA T2X) sub-pixel jitter offsets in pixels, indexed by
+/// `[m_FrameIndex & 1][axis]` (`g_JitteredSamples`). [`AntiAliasingEffect::ApplySubsampleJitter`](crate::graphics_engine::post_effects::AntiAliasingEffect::ApplySubsampleJitter)
+/// scales them by [`jitter_scale_factor`](get_jitter_scale_factor) and divides by the target size.
+pub unsafe fn get_jittered_samples() -> &'static mut [[f32; 2]; 2] {
+    unsafe { &mut *(0x142305360 as *mut [[f32; 2]; 2]) }
 }
 pub const GetViewProjInverse_ADDRESS: usize = 0x1400C77E0;
 /// Builds the depth-of-field chain's clip-to-world basis into `out`, which is also returned.

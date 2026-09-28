@@ -1,9 +1,18 @@
 #![cfg_attr(any(), rustfmt::skip)]
-#[repr(C, align(8))]
-/// `SCharacterMovementSettings`: the per-character movement tuning block. Only passed through
-/// opaquely so far; its first float is the walk/run speed threshold the start-act selection
-/// compares against.
-pub struct CharacterMovementSettings {}
+#[repr(C, align(4))]
+/// `SCharacterMovementSettings`: the per-character movement tuning resource (referenced from the
+/// character's movement-settings handle): the on-foot and swim blocks, followed by the plant
+/// settings (unmapped).
+pub struct CharacterMovementSettings {
+    pub m_OnFootSettings: crate::input::locomotion::CharacterOnFootSettings,
+    pub m_SwimSettings: crate::input::locomotion::CharacterSwimSettings,
+}
+fn _CharacterMovementSettings_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xBC], CharacterMovementSettings>([0u8; 0xBC]);
+    }
+    unreachable!()
+}
 impl CharacterMovementSettings {}
 impl std::convert::AsRef<CharacterMovementSettings> for CharacterMovementSettings {
     fn as_ref(&self) -> &CharacterMovementSettings {
@@ -12,6 +21,99 @@ impl std::convert::AsRef<CharacterMovementSettings> for CharacterMovementSetting
 }
 impl std::convert::AsMut<CharacterMovementSettings> for CharacterMovementSettings {
     fn as_mut(&mut self) -> &mut CharacterMovementSettings {
+        self
+    }
+}
+#[repr(C, align(4))]
+/// `SCharacterOnFootSettings`: the on-foot block of [`CharacterMovementSettings`](crate::input::locomotion::CharacterMovementSettings).
+pub struct CharacterOnFootSettings {
+    /// The walk/run speed threshold the start-act selection compares against.
+    pub m_WalkSpeed: f32,
+    pub m_WalkMaxVelocity: f32,
+    pub m_WalkAcceleration: f32,
+    pub m_WalkDeceleration: f32,
+    pub m_WalkMinInput: f32,
+    pub m_JogMaxVelocity: f32,
+    pub m_JogAcceleration: f32,
+    pub m_JogDeceleration: f32,
+    pub m_RunSpeed: f32,
+    pub m_RunBackpedalSpeed: f32,
+    pub m_RunAcceleration: f32,
+    pub m_RunDeceleration: f32,
+    pub m_RunMinInput: f32,
+    pub m_MaxSpeedToPlayStartAnim: f32,
+    pub m_MaxSpeedToPlayStopAnim: f32,
+    pub m_AngularDisplacementSpeed: f32,
+    pub m_AngularOrientationSpeed: f32,
+    pub m_AngularBackDisplacementSpeed: f32,
+    pub m_AngularBackOrientationSpeed: f32,
+    pub m_StopFrameBuffer: f32,
+    pub m_StartFrameBuffer: f32,
+    pub m_StartWhenAimingFrameBuffer: f32,
+    pub m_EnableStarts: f32,
+    pub m_EnablePlants: f32,
+    pub m_EnableStops: f32,
+    pub m_MaxLeftLeanAngle: f32,
+    pub m_MaxRightLeanAngle: f32,
+    pub m_HeavyWeaponWalkSpeed: f32,
+    pub m_LandAngularDisplacementSpeed: f32,
+    pub m_LandAngularOrientationSpeed: f32,
+    pub m_NonCombatWalkSpeed: f32,
+    pub m_NonCombatWalkAngularAccel: f32,
+    pub m_NonCombatWalkAngularSpeed: f32,
+    pub m_PredictedFallHeightTolerance: f32,
+    pub m_PredictedWallDistanceTolerance: f32,
+}
+fn _CharacterOnFootSettings_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8C], CharacterOnFootSettings>([0u8; 0x8C]);
+    }
+    unreachable!()
+}
+impl CharacterOnFootSettings {}
+impl std::convert::AsRef<CharacterOnFootSettings> for CharacterOnFootSettings {
+    fn as_ref(&self) -> &CharacterOnFootSettings {
+        self
+    }
+}
+impl std::convert::AsMut<CharacterOnFootSettings> for CharacterOnFootSettings {
+    fn as_mut(&mut self) -> &mut CharacterOnFootSettings {
+        self
+    }
+}
+#[repr(C, align(4))]
+/// `SCharacterSwimSettings`: the swim block of [`CharacterMovementSettings`](crate::input::locomotion::CharacterMovementSettings). The offsets of the
+/// two turn-rate fields within the movement settings are confirmed.
+pub struct CharacterSwimSettings {
+    pub m_SurfaceSwimFullDeflection: f32,
+    /// The surface-swim velocity turn rate; `UpdateSurfaceMovement` scales it by [`SWIM_TURN_RATE_SCALE`](crate::input::swim::SWIM_TURN_RATE_SCALE) degrees per second.
+    pub m_SurfaceSwimDirSlerpSpeed: f32,
+    /// The surface-swim facing turn rate: `UpdateSurfaceMovement` rotates the body toward the desired direction at this times [`SWIM_TURN_RATE_SCALE`](crate::input::swim::SWIM_TURN_RATE_SCALE) degrees per second (overridden by [`SWIM_AIM_TURN_RATE`](crate::input::swim::SWIM_AIM_TURN_RATE) while aiming or planting explosives).
+    pub m_SurfaceSwimFaceDirSlerpSpeed: f32,
+    pub m_UnderwaterToSurfaceDepth: f32,
+    pub m_SurfaceToUnderwaterPitch: f32,
+    pub m_UnderwaterInheritedDecel: f32,
+    pub m_UnderwaterSwimDirMaxAngular: f32,
+    pub m_UpwardSwimSpeedUp: f32,
+    pub m_ShallowDepthBobDepth: f32,
+    pub m_ShallowDepthMaxBobVelocity: f32,
+    pub m_SpeedNoRotationControl: f32,
+    pub m_SurfaceSwimNoInputToStopTime: f32,
+}
+fn _CharacterSwimSettings_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], CharacterSwimSettings>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl CharacterSwimSettings {}
+impl std::convert::AsRef<CharacterSwimSettings> for CharacterSwimSettings {
+    fn as_ref(&self) -> &CharacterSwimSettings {
+        self
+    }
+}
+impl std::convert::AsMut<CharacterSwimSettings> for CharacterSwimSettings {
+    fn as_mut(&mut self) -> &mut CharacterSwimSettings {
         self
     }
 }
@@ -38,14 +140,84 @@ pub unsafe fn get_NCharacter_ActMoveNoAim() -> &'static mut u32 {
     unsafe { &mut *(0x142F2FB64 as *mut u32) }
 }
 #[repr(C, align(8))]
+/// The movement task that warps the character onto a physical anchor during a scripted warp.
+pub struct NPhysicalAnchorWarpTask {}
+impl NPhysicalAnchorWarpTask {
+    pub const Update_ADDRESS: usize = 0x14083E210;
+    /// The per-frame update: lerps the character toward the anchor over the warp segment's local
+    /// time, evaluates the orientation and displacement through
+    /// [`NStateTask_LocoUtil`](crate::input::locomotion::NStateTask_LocoUtil), and writes the target direction to the blackboard.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NPhysicalAnchorWarpTask> for NPhysicalAnchorWarpTask {
+    fn as_ref(&self) -> &NPhysicalAnchorWarpTask {
+        self
+    }
+}
+impl std::convert::AsMut<NPhysicalAnchorWarpTask> for NPhysicalAnchorWarpTask {
+    fn as_mut(&mut self) -> &mut NPhysicalAnchorWarpTask {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The locomotion input task active while precision-aiming on foot.
+pub struct NStateTask_InputLocoAimPrecisionTask {}
+impl NStateTask_InputLocoAimPrecisionTask {
+    pub const Update_ADDRESS: usize = 0x140817820;
+    /// The per-frame update. When the player is in precision aim mode and aiming a weapon is
+    /// possible it queues the precision-aim idle or move act from the blackboard speed; otherwise
+    /// it dispatches like [`NStateTask_InputLocoMoveTask::Update`](crate::input::locomotion::NStateTask_InputLocoMoveTask::Update): aim-relative move or stop-turn
+    /// acts while [`Character::m_AimFlags`](crate::character::character::Character::m_AimFlags) has an aim bit set, run/steer move or stop acts
+    /// otherwise.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_InputLocoAimPrecisionTask>
+for NStateTask_InputLocoAimPrecisionTask {
+    fn as_ref(&self) -> &NStateTask_InputLocoAimPrecisionTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_InputLocoAimPrecisionTask>
+for NStateTask_InputLocoAimPrecisionTask {
+    fn as_mut(&mut self) -> &mut NStateTask_InputLocoAimPrecisionTask {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The locomotion move task active while the character is aim-relative (strafing). Mirrors
 /// [`NStateTask_InputLocoMoveTask`](crate::input::locomotion::NStateTask_InputLocoMoveTask) but stays in the aim-relative acts as long as an aim bit is set.
 pub struct NStateTask_InputLocoAimRelativeTask {}
 impl NStateTask_InputLocoAimRelativeTask {
     pub const Update_ADDRESS: usize = 0x140836500;
     /// The per-frame update. Like [`NStateTask_InputLocoMoveTask::Update`](crate::input::locomotion::NStateTask_InputLocoMoveTask::Update) it re-reads
-    /// [`Character::m_AimFlags`](crate::character::character::Character::m_AimFlags) each frame and dispatches to the strafe or run acts, so dropping the
-    /// aim bits here falls back to run/steer.
+    /// [`Character::m_AimFlags`](crate::character::character::Character::m_AimFlags) each frame and dispatches to the strafe or run acts, so the task
+    /// falls back to run/steer once the aim bits clear.
     pub unsafe fn Update(
         ctx: *mut crate::state::StateContext,
         p1: *mut ::std::ffi::c_void,
@@ -123,8 +295,8 @@ impl NStateTask_InputLocoMoveTask {
     /// [`Character::m_AimFlags`](crate::character::character::Character::m_AimFlags) ([`m_AimingWeapon`](crate::character::character::AimState::m_AimingWeapon) /
     /// [`m_AimingGrapple`](crate::character::character::AimState::m_AimingGrapple)): with neither set it queues
     /// [`QueueMoveActions`](crate::input::locomotion::NStateTask_LocoUtil::QueueMoveActions) (run — the body steers toward the
-    /// movement vector), otherwise it queues the aim-relative (strafe) acts. This branch is the
-    /// concrete point where on-foot movement becomes third-person steer instead of FPS-style strafe.
+    /// movement vector), otherwise it queues the aim-relative (strafe) acts. This branch selects
+    /// between the run/steer and strafe movement styles on foot.
     pub unsafe fn Update(
         ctx: *mut crate::state::StateContext,
         p1: *mut ::std::ffi::c_void,
@@ -192,6 +364,39 @@ for NStateTask_InputLocoSetTargetDirTask {
     }
 }
 #[repr(C, align(8))]
+/// The melee input task.
+pub struct NStateTask_InputMeleeTask {}
+impl NStateTask_InputMeleeTask {
+    pub const Update_ADDRESS: usize = 0x140830150;
+    /// The per-frame update. When melee is possible and clicked (the player also needs the hammer
+    /// ability), picks the melee target from the aim control, sets the character's link target and
+    /// combat mental state, and queues the melee acts.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_InputMeleeTask> for NStateTask_InputMeleeTask {
+    fn as_ref(&self) -> &NStateTask_InputMeleeTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_InputMeleeTask> for NStateTask_InputMeleeTask {
+    fn as_mut(&mut self) -> &mut NStateTask_InputMeleeTask {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// Free helpers that queue the concrete locomotion animation acts. The queued act encodes the
 /// movement style: [`QueueMoveActions`](crate::input::locomotion::NStateTask_LocoUtil::QueueMoveActions) steers the body
 /// toward the movement direction, while the aim-relative variants keep the body facing the aim and
@@ -216,8 +421,8 @@ impl NStateTask_LocoUtil {
     /// Queues the aim-relative (strafe) acts. It derives the facing reference from the weapon-aim
     /// target when [`m_AimingWeapon`](crate::character::character::AimState::m_AimingWeapon) is set (or the
     /// grapple target for [`m_AimingGrapple`](crate::character::character::AimState::m_AimingGrapple)),
-    /// and falls back to the character's own current forward when neither is set — so this alone
-    /// does not turn the body toward the camera without an aim reference.
+    /// and falls back to the character's own current forward when neither is set, so without an aim
+    /// reference the body keeps its current facing.
     pub unsafe fn QueueAimRelativeMoveActions(
         character: *mut crate::character::character::Character,
     ) -> bool {
@@ -248,7 +453,8 @@ impl NStateTask_LocoUtil {
     /// [`NStateTask_MovementLocomotionTask::Update`](crate::input::locomotion::NStateTask_MovementLocomotionTask::Update). With `track_face_dir` clear (and outside a
     /// gating animation segment) the rotation comes from the animation root motion
     /// (`CAnimationControl::GetDeltaRotation`) — the run-mode steer. With it set, the target face
-    /// direction is read from the character blackboard (id `736589998`) and the body is yawed
+    /// direction is read from the character blackboard
+    /// ([`TARGET_FACE_DIR_ID`](crate::blackboard::ObjectBlackboard::TARGET_FACE_DIR_ID)) and the body is yawed
     /// toward it: snapped directly when `snap_to_face_dir` is set (gated on the blend being
     /// finished when `wait_for_blend` is also set), otherwise rate-limited to `max_step_deg`
     /// degrees per call — the aim-mode camera tracking. `max_step_deg` must be positive on the
@@ -318,9 +524,9 @@ impl NStateTask_LocoUtil {
     /// orientation. Called from [`NStateTask_MovementLocomotionTask::Update`](crate::input::locomotion::NStateTask_MovementLocomotionTask::Update), which normalizes
     /// `out_direction`, scales it by
     /// [`EvaluateCharacterSpeed`](crate::input::locomotion::NStateTask_LocoUtil::EvaluateCharacterSpeed), and writes the
-    /// result as the character's physics velocity -- so overriding `out_direction` after the call
-    /// redirects the movement without touching the speed envelope. The bools and `out_secondary`
-    /// are unmapped.
+    /// result as the character's physics velocity. `out_direction` therefore sets only the heading
+    /// of the velocity; the speed envelope comes from the speed evaluation. The bools and
+    /// `out_secondary` are unmapped.
     pub unsafe fn EvaluateCharacterDisplacement(
         character: *mut crate::character::character::Character,
         orientation: *const crate::types::math::Matrix4,
@@ -349,7 +555,8 @@ impl NStateTask_LocoUtil {
     /// Computes this frame's movement speed for the character: the magnitude of the animation
     /// control's raw root velocity -- so the speed envelope, including the ramp-up through the
     /// start acts, comes from the animation clips themselves. With `use_blackboard_override` set,
-    /// the blackboard float id `1707123197` replaces the result when present. Multiplied onto the
+    /// the [`SPEED_OVERRIDE_ID`](crate::blackboard::ObjectBlackboard::SPEED_OVERRIDE_ID) float replaces
+    /// the result when present. Multiplied onto the
     /// normalized displacement direction by the movement task.
     pub unsafe fn EvaluateCharacterSpeed(
         character: *mut crate::character::character::Character,
@@ -450,7 +657,7 @@ pub struct NStateTask_MovementJumpTask {}
 impl NStateTask_MovementJumpTask {
     pub const Update_ADDRESS: usize = 0x140833240;
     /// The per-frame update. Computes a desired facing direction, rate-limits the body toward it,
-    /// and writes the character orientation (the release inlines the `SetOrientation` writes). The
+    /// and writes the character orientation (the `SetOrientation` writes are inlined). The
     /// desired facing has two sources: when
     /// [`m_AimingWeapon`](crate::character::character::AimState::m_AimingWeapon) is set it faces the weapon
     /// aim target (`CPlayerAimControl`'s stored target world position, which tracks the aim camera);
@@ -514,6 +721,46 @@ for NStateTask_MovementLocomotionTask {
 impl std::convert::AsMut<NStateTask_MovementLocomotionTask>
 for NStateTask_MovementLocomotionTask {
     fn as_mut(&mut self) -> &mut NStateTask_MovementLocomotionTask {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The movement actuator task for stunt locomotion on vehicles and in stunt areas, including the
+/// stunt step-up and step-down states.
+pub struct NStateTask_MovementStuntingTask {}
+impl NStateTask_MovementStuntingTask {
+    pub const Update_ADDRESS: usize = 0x14082B440;
+    /// The per-frame update. Resolves the stunt area the character stands on (projecting and
+    /// clamping onto its edges, or entering the next interaction-graph node), computes the
+    /// orientation through
+    /// [`EvaluateCharacterOrientation`](crate::input::locomotion::NStateTask_LocoUtil::EvaluateCharacterOrientation) (or the
+    /// MS variant) and the displacement through
+    /// [`EvaluateCharacterDisplacement`](crate::input::locomotion::NStateTask_LocoUtil::EvaluateCharacterDisplacement),
+    /// inheriting the vehicle's speed, and writes the proxy's wanted velocity.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_MovementStuntingTask>
+for NStateTask_MovementStuntingTask {
+    fn as_ref(&self) -> &NStateTask_MovementStuntingTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_MovementStuntingTask>
+for NStateTask_MovementStuntingTask {
+    fn as_mut(&mut self) -> &mut NStateTask_MovementStuntingTask {
         self
     }
 }

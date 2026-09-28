@@ -16,7 +16,7 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::{
-    blackboard::ObjectBlackboard,
+    blackboard::{ObjectBlackboard, PersistenceType},
     camera::game_camera_manager::GameCameraManager,
     character::character::{AimState, Character},
     input::{
@@ -352,7 +352,7 @@ fn force_face_camera(
             (*blackboard).SetVector3(
                 ObjectBlackboard::TARGET_FACE_DIR_ID,
                 &value,
-                1,
+                PersistenceType::PERSISTENCE_LOCAL_FRAME,
                 std::ptr::null(),
             );
         }
@@ -397,7 +397,7 @@ fn force_face_camera(
         (*blackboard).SetVector3(
             ObjectBlackboard::TARGET_FACE_DIR_ID,
             &value,
-            1,
+            PersistenceType::PERSISTENCE_LOCAL_FRAME,
             std::ptr::null(),
         );
     }
@@ -549,7 +549,7 @@ fn setup_target_dir(character: *mut Character, target_dir: *mut c_void, props: *
                 (*blackboard).SetVector3(
                     ObjectBlackboard::MOVE_DIR_ID,
                     &value,
-                    1,
+                    PersistenceType::PERSISTENCE_LOCAL_FRAME,
                     std::ptr::null(),
                 );
             }
@@ -715,7 +715,7 @@ fn evaluate_character_displacement(
                 (*blackboard).SetVector3(
                     ObjectBlackboard::CONSTRAINED_DIR_ID,
                     &world_value,
-                    1,
+                    PersistenceType::PERSISTENCE_LOCAL_FRAME,
                     std::ptr::null(),
                 );
             }

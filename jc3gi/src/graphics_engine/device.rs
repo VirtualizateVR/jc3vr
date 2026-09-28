@@ -143,7 +143,7 @@ pub unsafe fn GetMasterContext(
 }
 pub const GetDeviceInfo_ADDRESS: usize = 0x1419525F0;
 /// Copies the device's [`m_DeviceInfo`](crate::graphics_engine::device::Device::m_DeviceInfo) into `out` (a plain `memcpy` of the
-/// `0x38`-byte descriptor).
+/// whole descriptor).
 pub unsafe fn GetDeviceInfo(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     out: *mut crate::graphics_engine::device::DeviceInfo,

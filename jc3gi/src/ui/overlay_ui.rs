@@ -8,9 +8,11 @@
 /// into the movie's own render target.
 pub struct OverlayUI {
     _field_0: [u8; 20],
-    /// The `CUIBase` activation state; `2` is active. [`SetMouseCursorPosition`](crate::ui::overlay_ui::OverlayUI::SetMouseCursorPosition)
-    /// and `CUIManager::MousePointerVisibility` no-op unless it is `2`.
-    pub m_Current: u32,
+    /// The `CUIBase` activation state.
+    /// [`SetMouseCursorPosition`](crate::ui::overlay_ui::OverlayUI::SetMouseCursorPosition) and
+    /// `CUIManager::MousePointerVisibility` no-op unless it is
+    /// [`ACTIVE`](crate::ui::overlay_ui::UIBaseState::ACTIVE).
+    pub m_Current: crate::ui::overlay_ui::UIBaseState,
     _field_18: [u8; 264],
     /// The managed [`Value`](crate::ui::scaleform::Value) for the movie's `MCI_cursor` clip, bound by `GetMember` when the
     /// overlay activates.
@@ -81,4 +83,19 @@ impl std::convert::AsMut<OverlayUI> for OverlayUI {
     fn as_mut(&mut self) -> &mut OverlayUI {
         self
     }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The activation state of a `CUIBase` movie wrapper (`CUIBase::State`).
+pub enum UIBaseState {
+    INACTIVE = 0isize as _,
+    ACTIVATING = 1isize as _,
+    ACTIVE = 2isize as _,
+    DEACTIVATING = 3isize as _,
+}
+fn _UIBaseState_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], UIBaseState>([0u8; 0x4]);
+    }
+    unreachable!()
 }

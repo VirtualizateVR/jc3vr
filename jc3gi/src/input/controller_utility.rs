@@ -1,7 +1,7 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(8))]
 /// `CControllerUtility`: static helpers that relate controller input, the camera, and character
-/// orientation. Only the members needed so far are bound.
+/// orientation. Only some members are bound.
 pub struct ControllerUtility {}
 impl ControllerUtility {
     pub const GetDeltaAngleFromOrientation_ADDRESS: usize = 0x140781410;

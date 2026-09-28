@@ -1,4 +1,21 @@
 #![cfg_attr(any(), rustfmt::skip)]
+crate::__bitflags! {
+    #[doc =
+    " The `flags` argument of [`Clear`](crate::graphics_engine::draw::Clear) (`Graphics::EClearFlags`): which targets of the bound render"]
+    #[doc =
+    " setup to clear. [`Clear`](crate::graphics_engine::draw::Clear) clears the colour targets for any of the channel bits and the"]
+    #[doc = " depth-stencil view for the depth and stencil bits."] pub struct ClearFlags
+    : u32 { const CLEAR_DEPTHBUFFER = 1usize as _; const CLEAR_STENCILBUFFER = 2usize as
+    _; const CLEAR_RENDERBUFFER_R = 4usize as _; const CLEAR_RENDERBUFFER_G = 8usize as
+    _; const CLEAR_RENDERBUFFER_B = 16usize as _; const CLEAR_RENDERBUFFER_A = 32usize as
+    _; }
+}
+fn _ClearFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], ClearFlags>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 /// Parameters to [`CreateDomainProgram`](crate::graphics_engine::draw::CreateDomainProgram): the compiled DXBC bytecode, its byte length, and a debug
 /// name. Same layout as [`CreateVertexProgramParams`](crate::graphics_engine::draw::CreateVertexProgramParams).
@@ -122,6 +139,13 @@ fn _PrimitiveType_size_check() {
     }
     unreachable!()
 }
+/// The constant-buffer size classes (`CB_SIZES`), in `float4` rows and ascending.
+/// [`SetFragmentProgramConstantBufferSize`](crate::graphics_engine::draw::SetFragmentProgramConstantBufferSize) and [`SetVertexProgramConstantBufferSize`](crate::graphics_engine::draw::SetVertexProgramConstantBufferSize) round a
+/// requested row count up to the first entry at or above it, and the context pre-creates one pooled
+/// `ID3D11Buffer` per slot and size class.
+pub unsafe fn get_constant_buffer_size_classes() -> &'static mut [u32; 17] {
+    unsafe { &mut *(0x1425F9300 as *mut [u32; 17]) }
+}
 pub const DrawIndexed_ADDRESS: usize = 0x141967720;
 /// An indexed draw.
 pub unsafe fn DrawIndexed(
@@ -162,92 +186,173 @@ pub unsafe fn Draw(
         f(ctx, prim, arg2, arg3)
     }
 }
-pub const DrawInstanced_ADDRESS: usize = 0x141962F10;
-/// An instanced draw.
+pub const DrawInstanced_ADDRESS: usize = 0x141962CC0;
+/// A non-indexed instanced draw: takes the context mutex, flushes the pending render state, and
+/// issues `ID3D11DeviceContext::DrawInstanced` (vtable slot 21).
 pub unsafe fn DrawInstanced(
-    a1: *mut ::std::ffi::c_void,
-    a2: *mut ::std::ffi::c_void,
-    a3: *mut ::std::ffi::c_void,
-    a4: *mut ::std::ffi::c_void,
-    a5: *mut ::std::ffi::c_void,
-    a6: *mut ::std::ffi::c_void,
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    first_vertex: u32,
+    vertex_count_per_instance: i32,
+    first_instance: u32,
+    instance_count: i32,
 ) {
     unsafe {
         let f: unsafe extern "system" fn(
-            a1: *mut ::std::ffi::c_void,
-            a2: *mut ::std::ffi::c_void,
-            a3: *mut ::std::ffi::c_void,
-            a4: *mut ::std::ffi::c_void,
-            a5: *mut ::std::ffi::c_void,
-            a6: *mut ::std::ffi::c_void,
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            first_vertex: u32,
+            vertex_count_per_instance: i32,
+            first_instance: u32,
+            instance_count: i32,
         ) = ::std::mem::transmute(DrawInstanced_ADDRESS);
-        f(a1, a2, a3, a4, a5, a6)
+        f(ctx, first_vertex, vertex_count_per_instance, first_instance, instance_count)
+    }
+}
+pub const DrawIndexedWithBoundState_ADDRESS: usize = 0x141962DA0;
+/// The `(context, first_index, index_count)` overload of `Graphics::DrawIndexed`, which draws with the
+/// already-bound primitive type and index buffer: takes the context mutex, flushes the pending render
+/// state, and issues `ID3D11DeviceContext::DrawIndexed` (vtable slot 12). The overload that also sets
+/// the primitive type and buffers is [`DrawIndexed`](crate::graphics_engine::draw::DrawIndexed).
+pub unsafe fn DrawIndexedWithBoundState(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    first_index: u32,
+    index_count: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            first_index: u32,
+            index_count: i32,
+        ) = ::std::mem::transmute(DrawIndexedWithBoundState_ADDRESS);
+        f(ctx, first_index, index_count)
+    }
+}
+pub const DrawIndexedNoMutex_ADDRESS: usize = 0x141962D50;
+/// An indexed draw without the context mutex: flushes the pending render state and issues
+/// `ID3D11DeviceContext::DrawIndexed` (vtable slot 12).
+pub unsafe fn DrawIndexedNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    first_index: u32,
+    index_count: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            first_index: u32,
+            index_count: i32,
+        ) = ::std::mem::transmute(DrawIndexedNoMutex_ADDRESS);
+        f(ctx, first_index, index_count)
+    }
+}
+pub const DrawIndexedInstancedNoMutex_ADDRESS: usize = 0x141962E20;
+/// An indexed instanced draw without the context mutex: flushes the pending render state and issues
+/// `ID3D11DeviceContext::DrawIndexedInstanced` (vtable slot 20).
+pub unsafe fn DrawIndexedInstancedNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    first_index: u32,
+    index_count_per_instance: i32,
+    instance_count: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            first_index: u32,
+            index_count_per_instance: i32,
+            instance_count: i32,
+        ) = ::std::mem::transmute(DrawIndexedInstancedNoMutex_ADDRESS);
+        f(ctx, first_index, index_count_per_instance, instance_count)
     }
 }
 pub const DrawIndexedInstanced_ADDRESS: usize = 0x141962E80;
-/// An indexed instanced draw.
+/// An indexed instanced draw: takes the context mutex, flushes the pending render state, and issues
+/// `ID3D11DeviceContext::DrawIndexedInstanced` (vtable slot 20).
 pub unsafe fn DrawIndexedInstanced(
-    a1: *mut ::std::ffi::c_void,
-    a2: *mut ::std::ffi::c_void,
-    a3: *mut ::std::ffi::c_void,
-    a4: *mut ::std::ffi::c_void,
-    a5: *mut ::std::ffi::c_void,
-    a6: *mut ::std::ffi::c_void,
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    first_index: u32,
+    index_count_per_instance: u32,
+    instance_count: u32,
 ) {
     unsafe {
         let f: unsafe extern "system" fn(
-            a1: *mut ::std::ffi::c_void,
-            a2: *mut ::std::ffi::c_void,
-            a3: *mut ::std::ffi::c_void,
-            a4: *mut ::std::ffi::c_void,
-            a5: *mut ::std::ffi::c_void,
-            a6: *mut ::std::ffi::c_void,
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            first_index: u32,
+            index_count_per_instance: u32,
+            instance_count: u32,
         ) = ::std::mem::transmute(DrawIndexedInstanced_ADDRESS);
-        f(a1, a2, a3, a4, a5, a6)
+        f(ctx, first_index, index_count_per_instance, instance_count)
     }
 }
-pub const DrawInstancedIndirect_ADDRESS: usize = 0x141962CC0;
-/// A GPU-driven instanced draw.
-pub unsafe fn DrawInstancedIndirect(
-    a1: *mut ::std::ffi::c_void,
-    a2: *mut ::std::ffi::c_void,
-    a3: *mut ::std::ffi::c_void,
-    a4: *mut ::std::ffi::c_void,
-    a5: *mut ::std::ffi::c_void,
-    a6: *mut ::std::ffi::c_void,
+pub const DrawIndexedInstancedIndirectNoMutex_ADDRESS: usize = 0x141962F10;
+/// A GPU-driven indexed instanced draw without the context mutex: flushes the pending render state
+/// and issues `ID3D11DeviceContext::DrawIndexedInstancedIndirect` (vtable slot 39) with the argument
+/// buffer of `draw_params` at byte `offset`.
+pub unsafe fn DrawIndexedInstancedIndirectNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    draw_params: *mut ::std::ffi::c_void,
+    offset: u32,
 ) {
     unsafe {
         let f: unsafe extern "system" fn(
-            a1: *mut ::std::ffi::c_void,
-            a2: *mut ::std::ffi::c_void,
-            a3: *mut ::std::ffi::c_void,
-            a4: *mut ::std::ffi::c_void,
-            a5: *mut ::std::ffi::c_void,
-            a6: *mut ::std::ffi::c_void,
-        ) = ::std::mem::transmute(DrawInstancedIndirect_ADDRESS);
-        f(a1, a2, a3, a4, a5, a6)
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            draw_params: *mut ::std::ffi::c_void,
+            offset: u32,
+        ) = ::std::mem::transmute(DrawIndexedInstancedIndirectNoMutex_ADDRESS);
+        f(ctx, draw_params, offset)
     }
 }
-pub const DrawIndexedInstancedIndirect_ADDRESS: usize = 0x141963080;
-/// A GPU-driven indexed instanced draw.
+pub const DrawIndexedInstancedIndirect_ADDRESS: usize = 0x141962F60;
+/// A GPU-driven indexed instanced draw: takes the context mutex, flushes the pending render state,
+/// and issues `ID3D11DeviceContext::DrawIndexedInstancedIndirect` (vtable slot 39) with the argument
+/// buffer of `draw_params` at byte `offset`.
 pub unsafe fn DrawIndexedInstancedIndirect(
-    a1: *mut ::std::ffi::c_void,
-    a2: *mut ::std::ffi::c_void,
-    a3: *mut ::std::ffi::c_void,
-    a4: *mut ::std::ffi::c_void,
-    a5: *mut ::std::ffi::c_void,
-    a6: *mut ::std::ffi::c_void,
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    draw_params: *mut ::std::ffi::c_void,
+    offset: u32,
 ) {
     unsafe {
         let f: unsafe extern "system" fn(
-            a1: *mut ::std::ffi::c_void,
-            a2: *mut ::std::ffi::c_void,
-            a3: *mut ::std::ffi::c_void,
-            a4: *mut ::std::ffi::c_void,
-            a5: *mut ::std::ffi::c_void,
-            a6: *mut ::std::ffi::c_void,
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            draw_params: *mut ::std::ffi::c_void,
+            offset: u32,
         ) = ::std::mem::transmute(DrawIndexedInstancedIndirect_ADDRESS);
-        f(a1, a2, a3, a4, a5, a6)
+        f(ctx, draw_params, offset)
+    }
+}
+pub const DrawInstancedIndirect_ADDRESS: usize = 0x141962FF0;
+/// A GPU-driven non-indexed instanced draw: takes the context mutex, flushes the pending render
+/// state, and issues `ID3D11DeviceContext::DrawInstancedIndirect` (vtable slot 40) with the argument
+/// buffer of `draw_params` at byte `offset`.
+pub unsafe fn DrawInstancedIndirect(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    draw_params: *mut ::std::ffi::c_void,
+    offset: u32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            draw_params: *mut ::std::ffi::c_void,
+            offset: u32,
+        ) = ::std::mem::transmute(DrawInstancedIndirect_ADDRESS);
+        f(ctx, draw_params, offset)
+    }
+}
+pub const DrawIndexedInstancedMultiIndirect_ADDRESS: usize = 0x141963080;
+/// `draw_count` GPU-driven indexed instanced draws under one hold of the context mutex: issues
+/// `ID3D11DeviceContext::DrawIndexedInstancedIndirect` (vtable slot 39) once per draw, advancing the
+/// argument offset by one 20-byte argument record each time.
+pub unsafe fn DrawIndexedInstancedMultiIndirect(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    draw_count: u32,
+    draw_params: *mut ::std::ffi::c_void,
+    offset: u32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            draw_count: u32,
+            draw_params: *mut ::std::ffi::c_void,
+            offset: u32,
+        ) = ::std::mem::transmute(DrawIndexedInstancedMultiIndirect_ADDRESS);
+        f(ctx, draw_count, draw_params, offset)
     }
 }
 pub const Dispatch_ADDRESS: usize = 0x141962AD0;
@@ -317,7 +422,8 @@ pub unsafe fn SetRenderSetup(
     }
 }
 pub const Clear_ADDRESS: usize = 0x141967020;
-/// Clears the currently-bound render setup. `color` is a 4-float RGBA pointer and may be null.
+/// Clears the currently-bound render setup. `flags` is a [`ClearFlags`](crate::graphics_engine::draw::ClearFlags) mask; `color` is a 4-float
+/// RGBA pointer and may be null.
 pub unsafe fn Clear(
     ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
     flags: u32,
@@ -336,10 +442,78 @@ pub unsafe fn Clear(
         f(ctx, flags, color, depth, stencil)
     }
 }
+pub const SetStencilTestEnable_ADDRESS: usize = 0x141966730;
+/// Stages the stencil-test enable into [`HContext_t::m_DepthStencilStateIndex`](crate::graphics_engine::graphics_engine::HContext_t::m_DepthStencilStateIndex); applied
+/// at the next draw's state flush.
+pub unsafe fn SetStencilTestEnable(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    enable: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            enable: i32,
+        ) = ::std::mem::transmute(SetStencilTestEnable_ADDRESS);
+        f(ctx, enable)
+    }
+}
+pub const SetStencilFunc_ADDRESS: usize = 0x141966680;
+/// Stages the stencil comparison function and read mask into
+/// [`HContext_t::m_DepthStencilStateIndex`](crate::graphics_engine::graphics_engine::HContext_t::m_DepthStencilStateIndex) and the reference value into
+/// [`HContext_t::m_StencilRef`](crate::graphics_engine::graphics_engine::HContext_t::m_StencilRef).
+pub unsafe fn SetStencilFunc(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    func: i32,
+    reference: u32,
+    mask: u8,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            func: i32,
+            reference: u32,
+            mask: u8,
+        ) = ::std::mem::transmute(SetStencilFunc_ADDRESS);
+        f(ctx, func, reference, mask)
+    }
+}
+pub const SetStencilMask_ADDRESS: usize = 0x1419666B0;
+/// Stages the stencil write mask into [`HContext_t::m_DepthStencilStateIndex`](crate::graphics_engine::graphics_engine::HContext_t::m_DepthStencilStateIndex).
+pub unsafe fn SetStencilMask(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    write_mask: u8,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            write_mask: u8,
+        ) = ::std::mem::transmute(SetStencilMask_ADDRESS);
+        f(ctx, write_mask)
+    }
+}
+pub const SetStencilOp_ADDRESS: usize = 0x1419666F0;
+/// Stages the stencil fail, depth-fail, and pass operations into
+/// [`HContext_t::m_DepthStencilStateIndex`](crate::graphics_engine::graphics_engine::HContext_t::m_DepthStencilStateIndex).
+pub unsafe fn SetStencilOp(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    fail: i32,
+    depth_fail: i32,
+    depth_pass: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            fail: i32,
+            depth_fail: i32,
+            depth_pass: i32,
+        ) = ::std::mem::transmute(SetStencilOp_ADDRESS);
+        f(ctx, fail, depth_fail, depth_pass)
+    }
+}
 pub const CopySurfaceToTexture_ADDRESS: usize = 0x141954850;
 /// Copies one surface into another texture: a whole-resource `ID3D11DeviceContext::CopyResource`
-/// of `src`'s D3D11 resource into `dst`'s, issued under the context mutex. The release build's
-/// symbol table misplaces this function's name onto [`EndDraw`](crate::graphics_engine::draw::EndDraw) and labels this address
+/// of `src`'s D3D11 resource into `dst`'s, issued under the context mutex. IDA
+/// misplaces this function's name onto [`EndDraw`](crate::graphics_engine::draw::EndDraw) and labels this address
 /// `NGraphicsEngine::CGPUProfiler::BeginScope`; the body is unambiguous.
 pub unsafe fn CopySurfaceToTexture(
     ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
@@ -360,7 +534,7 @@ pub const EndDraw_ADDRESS: usize = 0x14195ABA0;
 /// context's command-slot ring and submits the two prebuilt command objects for the current slot
 /// through the backend. It takes no arguments beyond the context.
 ///
-/// The release build's symbol table labels this address `Graphics::CopySurfaceToTexture`; the two
+/// IDA labels this address `Graphics::CopySurfaceToTexture`; the two
 /// names are swapped (see [`CopySurfaceToTexture`](crate::graphics_engine::draw::CopySurfaceToTexture)).
 pub unsafe fn EndDraw(ctx: *mut crate::graphics_engine::graphics_engine::HContext_t) {
     unsafe {
@@ -385,8 +559,7 @@ pub unsafe fn ResolveSurface(
     }
 }
 pub const SetScissorEnable_ADDRESS: usize = 0x141966B80;
-/// Sets the scissor-enable bit of the context's current rasterizer-state key (bit 7 of the key's low
-/// byte), which becomes `D3D11_RASTERIZER_DESC::ScissorEnable` when the state object for that key is
+/// Sets the scissor-enable bit of the context's current rasterizer-state key, which becomes `D3D11_RASTERIZER_DESC::ScissorEnable` when the state object for that key is
 /// created. The key is looked up (and the object created on first use) by the render-state flush that
 /// precedes every draw, so the change takes effect from the next draw on. Only the enable flag lives
 /// in the key: the rectangles themselves are passed straight through to the context's
@@ -510,7 +683,7 @@ pub const SetFragmentProgramConstants_ADDRESS: usize = 0x141964840;
 /// actual GPU upload happens at the next state flush.
 ///
 /// The staging buffer is a single 512-row `float4` array per shader stage, held in the graphics
-/// context (the fragment one begins at context offset `0x2020`, after the vertex one at `0x20`); the
+/// context (the fragment one follows the vertex one); the
 /// four slots of a stage carve their windows out of it, each starting at the row
 /// [`SetFragmentProgramConstantBufferSize`](crate::graphics_engine::draw::SetFragmentProgramConstantBufferSize) recorded for it. The write is therefore bounded by that
 /// window and by the pooled buffer the slot is bound to, not by `count` alone. A row-level redundancy
@@ -539,19 +712,17 @@ pub const SetFragmentProgramConstantBufferSize_ADDRESS: usize = 0x1419643B0;
 /// stage's shared staging array its window begins.
 ///
 /// `count` is a number of `float4` rows. It is not stored as-is: the engine rounds it **up** to the
-/// next entry of a fixed 17-entry pool-size table — `1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128,
-/// 196, 256, 384, 512` — and binds the pre-created `ID3D11Buffer` of that size to the slot (a
+/// next entry of [`constant_buffer_size_classes`](get_constant_buffer_size_classes) and binds the pre-created `ID3D11Buffer` of that
+/// size to the slot (a
 /// `PSSetConstantBuffers` call, skipped when the size class is unchanged). The rounded size class,
 /// not `count`, is what [`SetupRenderStates`](crate::graphics_engine::draw::SetupRenderStates) later uploads, so the constant buffer the shader sees is
 /// the rounded one and the rows between `count` and the size class are uploaded as whatever the
 /// staging array happens to hold. `start_offset` is recorded as the slot's base row within the
-/// stage's 512-row staging array; every shipped call passes `0`, so at most one staged slot per stage
+/// stage's 512-row staging array; every call passes `0`, so at most one staged slot per stage
 /// is live at a time. Passing `count = 0` unbinds the slot and clears its dirty flag.
 ///
-/// The debug build additionally keeps `count` verbatim so that every
-/// [`SetFragmentProgramConstants`](crate::graphics_engine::draw::SetFragmentProgramConstants) can assert that its own `start_offset + count` stays within it; the
-/// release build stores only the bound buffer, the size class, and the base row, and performs no
-/// bounds check at all.
+/// The function stores only the bound buffer, the size class, and the base row. It does not keep
+/// `count`, and [`SetFragmentProgramConstants`](crate::graphics_engine::draw::SetFragmentProgramConstants) performs no bounds check against it.
 pub unsafe fn SetFragmentProgramConstantBufferSize(
     ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
     cb_index: i32,

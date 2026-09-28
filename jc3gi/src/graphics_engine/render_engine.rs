@@ -19,6 +19,40 @@ impl RenderBlockTypeBase {
         self.vftable
             as *const crate::graphics_engine::render_engine::RenderBlockTypeBaseVftable
     }
+    pub const SetupLightingTextures_ADDRESS: usize = 0x140101160;
+    /// Binds the per-frame lighting textures and samplers every lit render block type shares
+    /// (`CRenderBlockType::SetupLightingTextures`, static): the lighting samplers on fragment sampler
+    /// slots 10 and 11, the environment cube map on fragment texture slot 11 (cleared when null), the
+    /// light falloff texture on slot 12, [`RenderContext::m_LightLookup`](crate::graphics_engine::graphics_engine::RenderContext::m_LightLookup) on slot 31, and the terrain
+    /// horizon maps [`RenderContext::m_HorizonMap0`](crate::graphics_engine::graphics_engine::RenderContext::m_HorizonMap0) and [`RenderContext::m_HorizonMap1`](crate::graphics_engine::graphics_engine::RenderContext::m_HorizonMap1) on slots 44
+    /// and 45 (each replaced by
+    /// [`ShadowManager::m_HorizonMapFallback`](crate::graphics_engine::shadow_manager::ShadowManager::m_HorizonMapFallback)
+    /// when null).
+    pub unsafe fn SetupLightingTextures(
+        ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::SetupLightingTextures_ADDRESS);
+            f(ctx)
+        }
+    }
+    pub const SetupForwardLightingResources_ADDRESS: usize = 0x140101250;
+    /// Binds the forward-lighting resources (`CRenderBlockType::SetupForwardLightingResources`,
+    /// static): [`RenderContext::m_LightBuffer`](crate::graphics_engine::graphics_engine::RenderContext::m_LightBuffer) as fragment constant buffer 3, the first GBuffer
+    /// texture ([`GraphicsEngine::m_GBufferTexture`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_GBufferTexture)`[0]`)
+    /// on fragment texture slot 15, then [`SetupLightingTextures`](crate::graphics_engine::render_engine::RenderBlockTypeBase::SetupLightingTextures).
+    pub unsafe fn SetupForwardLightingResources(
+        ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::SetupForwardLightingResources_ADDRESS);
+            f(ctx)
+        }
+    }
     /// Creates the type's GPU resources (shaders, buffers) against the given
     /// `SResourceContext`. Each type's `RegisterType` calls this at startup with the render
     /// engine's own resource context.
@@ -43,10 +77,9 @@ impl RenderBlockTypeBase {
     }
     /// Recreates the type's GPU resources against the given `SResourceContext`.
     /// `CRenderEngine::RecreateRenderBlockTypes` calls this on every registered type with the
-    /// render engine's own resource context (the settings-change path) — but several types,
-    /// including the terrain setup types, implement it as a no-op; re-creating those requires
-    /// calling [`Destroy`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Destroy) and
-    /// [`Create`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Create) directly.
+    /// render engine's own resource context (the settings-change path). Several types,
+    /// including the terrain setup types, implement it as a no-op; for those, only
+    /// [`Destroy`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Destroy) followed by [`Create`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Create) rebuilds the resources.
     pub unsafe fn Recreate(
         &mut self,
         resource_context: *mut crate::graphics_engine::render_engine::ResourceContext,
@@ -72,7 +105,7 @@ impl RenderBlockTypeBase {
     }
     /// Whether render passes draw blocks of this type: `CRenderPass::DoDraw` dispatches this
     /// per type run (vtable slot [`IsEnabled`](crate::graphics_engine::render_engine::RenderBlockTypeBase::IsEnabled)) and skips every block whose
-    /// type reports disabled. In the release build the base implementation is compiled to a
+    /// type reports disabled. The base implementation is compiled to a
     /// constant `true`.
     pub unsafe fn IsEnabled(&self) -> bool {
         unsafe {
@@ -80,7 +113,7 @@ impl RenderBlockTypeBase {
             f(self as *const Self as _)
         }
     }
-    /// Enables drawing of this type's blocks. In the release build the base implementation is
+    /// Enables drawing of this type's blocks. The base implementation is
     /// compiled to a no-op (the enabled flag was optimized out).
     pub unsafe fn Enable(&mut self) {
         unsafe {
@@ -88,9 +121,9 @@ impl RenderBlockTypeBase {
             f(self as *mut Self as _)
         }
     }
-    /// Disables drawing of this type's blocks. In the release build the base implementation is
-    /// compiled to a no-op (the enabled flag was optimized out), so suppressing a type requires
-    /// replacing its [`IsEnabled`](crate::graphics_engine::render_engine::RenderBlockTypeBase::IsEnabled) vtable entry.
+    /// Disables drawing of this type's blocks. The base implementation is
+    /// compiled to a no-op (the enabled flag was optimized out), so a type's
+    /// [`IsEnabled`](crate::graphics_engine::render_engine::RenderBlockTypeBase::IsEnabled) implementation alone decides whether its blocks draw.
     pub unsafe fn Disable(&mut self) {
         unsafe {
             let f = (&raw const (*self.vftable()).Disable).read();
@@ -127,10 +160,9 @@ pub struct RenderBlockTypeBaseVftable {
     ),
     /// Recreates the type's GPU resources against the given `SResourceContext`.
     /// `CRenderEngine::RecreateRenderBlockTypes` calls this on every registered type with the
-    /// render engine's own resource context (the settings-change path) — but several types,
-    /// including the terrain setup types, implement it as a no-op; re-creating those requires
-    /// calling [`Destroy`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Destroy) and
-    /// [`Create`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Create) directly.
+    /// render engine's own resource context (the settings-change path). Several types,
+    /// including the terrain setup types, implement it as a no-op; for those, only
+    /// [`Destroy`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Destroy) followed by [`Create`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Create) rebuilds the resources.
     pub Recreate: unsafe extern "system" fn(
         this: *mut crate::graphics_engine::render_engine::RenderBlockTypeBase,
         resource_context: *mut crate::graphics_engine::render_engine::ResourceContext,
@@ -181,19 +213,19 @@ pub struct RenderBlockTypeBaseVftable {
     ),
     /// Whether render passes draw blocks of this type: `CRenderPass::DoDraw` dispatches this
     /// per type run (vtable slot [`IsEnabled`](crate::graphics_engine::render_engine::RenderBlockTypeBase::IsEnabled)) and skips every block whose
-    /// type reports disabled. In the release build the base implementation is compiled to a
+    /// type reports disabled. The base implementation is compiled to a
     /// constant `true`.
     pub IsEnabled: unsafe extern "system" fn(
         this: *const crate::graphics_engine::render_engine::RenderBlockTypeBase,
     ) -> bool,
-    /// Enables drawing of this type's blocks. In the release build the base implementation is
+    /// Enables drawing of this type's blocks. The base implementation is
     /// compiled to a no-op (the enabled flag was optimized out).
     pub Enable: unsafe extern "system" fn(
         this: *mut crate::graphics_engine::render_engine::RenderBlockTypeBase,
     ),
-    /// Disables drawing of this type's blocks. In the release build the base implementation is
-    /// compiled to a no-op (the enabled flag was optimized out), so suppressing a type requires
-    /// replacing its [`IsEnabled`](crate::graphics_engine::render_engine::RenderBlockTypeBase::IsEnabled) vtable entry.
+    /// Disables drawing of this type's blocks. The base implementation is
+    /// compiled to a no-op (the enabled flag was optimized out), so a type's
+    /// [`IsEnabled`](crate::graphics_engine::render_engine::RenderBlockTypeBase::IsEnabled) implementation alone decides whether its blocks draw.
     pub Disable: unsafe extern "system" fn(
         this: *mut crate::graphics_engine::render_engine::RenderBlockTypeBase,
     ),
@@ -243,8 +275,8 @@ impl std::convert::AsMut<RenderBlockTypeEntry> for RenderBlockTypeEntry {
 }
 #[repr(C, align(8))]
 /// The engine's fixed-size table of *every* live [`RenderBlockTypeBase`](crate::graphics_engine::render_engine::RenderBlockTypeBase) instance, distinct from the
-/// [`RenderBlockTypeRegistry`](crate::graphics_engine::render_engine::RenderBlockTypeRegistry) below. `IRenderBlockType`'s constructor (`0x140_100_FC0`, also inlined
-/// at many construction sites) scans this table for the first null slot, stores the instance there,
+/// [`RenderBlockTypeRegistry`](crate::graphics_engine::render_engine::RenderBlockTypeRegistry) below. `IRenderBlockType`'s constructor (also inlined at many
+/// construction sites) scans this table for the first null slot, stores the instance there,
 /// and records the slot index in the object; the destructor clears the slot again. Every render-block
 /// type therefore appears here the moment it is constructed, whether or not it is later handed to
 /// `CRenderBlockFactory::AddType` — so this table, minus the registry, is the set of types that draw
@@ -256,10 +288,10 @@ impl std::convert::AsMut<RenderBlockTypeEntry> for RenderBlockTypeEntry {
 ///
 /// The table is **not** compacted: the destructor nulls only the slot its own object claimed, so a
 /// type destroyed out of construction order leaves a hole with occupied slots after it, and the next
-/// construction refills that hole rather than appending. A walk therefore has to cover all
-/// [`CAPACITY`](crate::graphics_engine::render_engine::RenderBlockTypeInstances::CAPACITY) slots and skip nulls, which is what the engine's own consumer does —
-/// `CGPUProfiler::DrawDrawCallPanel` (`0x140_0E0_D00`) indexes every slot from 0 to 127 to label its
-/// per-type draw-call rows.
+/// construction refills that hole rather than appending. Occupied slots can therefore sit anywhere
+/// among the [`CAPACITY`](crate::graphics_engine::render_engine::RenderBlockTypeInstances::CAPACITY) slots, with nulls between them. The engine's own reader,
+/// `CGPUProfiler::DrawDrawCallPanel`, indexes every slot and skips nulls to label its per-type
+/// draw-call rows.
 pub struct RenderBlockTypeInstances {}
 impl RenderBlockTypeInstances {}
 impl RenderBlockTypeInstances {
@@ -308,26 +340,111 @@ impl std::convert::AsMut<RenderBlockTypeRegistry> for RenderBlockTypeRegistry {
 }
 #[repr(C, align(8))]
 pub struct RenderEngine {
-    _field_0: [u8; 128],
+    _field_0: [u8; 64],
+    /// The particle tessellation factor scale, adapted each frame by
+    /// [`BeginParticlePassGpuTimingQuery`](crate::graphics_engine::render_engine::RenderEngine::BeginParticlePassGpuTimingQuery): lowered by 0.1 while
+    /// the particle pass's average GPU time exceeds 5 ms, raised by 0.1 below 4 ms, and clamped to at
+    /// most 1.
+    pub m_TessFactorScale: f32,
+    /// Set while the particle pass's average GPU time is above the heavy-load threshold, cleared once
+    /// it falls below 5 ms.
+    pub m_ParticlePassGpuIntense: bool,
+    _field_45: [u8; 3],
+    /// The GPU timing query bracketing the particle pass.
+    pub m_ParticlePassGpuTimingQuery: crate::graphics_engine::gpu_profiler::RenderPassGpuTimingQuery,
     /// The per-pass render-block-item lists: one vector of [`RenderPass`](crate::graphics_engine::render_pass::RenderPass) pointers per pass id.
     /// [`DrawRenderPassRange`](crate::graphics_engine::render_engine::RenderEngine::DrawRenderPassRange) and the per-frame list rotation walk
     /// this.
     pub m_RenderPasses: [crate::types::std_vector::Vector<
         *mut crate::graphics_engine::render_pass::RenderPass,
     >; 157],
-    _field_1420: [u8; 672],
-    /// The per-Draw constant-buffer ring index (feeding `CalculateConstantBufferIndices`): each `Draw`
-    /// selects a constant-buffer pool slot from this and advances it, wrapping at the limit in the `u32`
-    /// immediately after. It advances independently of the engine frame counters.
-    pub m_ConstantBufferRingIndex: u32,
-    _field_16c4: [u8; 524],
+    _field_1420: [u8; 80],
+    /// The time of day in hours, copied per pass into
+    /// [`RenderContext::m_TimeOfDay`](crate::graphics_engine::graphics_engine::RenderContext::m_TimeOfDay).
+    pub m_TimeOfDay: f32,
+    /// The frame delta time in seconds, copied per pass into
+    /// [`RenderContext::m_Dt`](crate::graphics_engine::graphics_engine::RenderContext::m_Dt).
+    pub m_Dt: f32,
+    /// The wind animation phase, copied per pass into
+    /// [`RenderContext::m_WindAnimation`](crate::graphics_engine::graphics_engine::RenderContext::m_WindAnimation).
+    pub m_WindAnimation: f32,
+    /// The accumulated frame time, copied per pass into the render context and staged as the
+    /// GlobalConstants frame-time term.
+    pub m_AccFrameTime: u32,
+    _field_1480: [u8; 216],
+    /// The precipitation density, copied per pass into
+    /// [`RenderContext::m_PrecipitationDensity`](crate::graphics_engine::graphics_engine::RenderContext::m_PrecipitationDensity).
+    pub m_PrecipitationDensity: f32,
+    /// The sun direction, copied per pass into
+    /// [`RenderContext::m_SunVector`](crate::graphics_engine::graphics_engine::RenderContext::m_SunVector).
+    pub m_SunVector: crate::types::math::Vector3,
+    /// The wind strength, copied per pass into
+    /// [`RenderContext::m_WindStrength`](crate::graphics_engine::graphics_engine::RenderContext::m_WindStrength).
+    pub m_WindStrength: f32,
+    _field_156c: [u8; 132],
+    /// The sun backlight colour. [`SetGlobalShaderConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants) stages
+    /// it scaled by [`m_SunBacklightDiffuseMultiplier`](crate::graphics_engine::render_engine::RenderEngine::m_SunBacklightDiffuseMultiplier) and
+    /// [`m_SunBacklightSpecularMultiplier`](crate::graphics_engine::render_engine::RenderEngine::m_SunBacklightSpecularMultiplier) into the fragment
+    /// GlobalConstants.
+    pub m_SunBacklightColor: crate::types::math::Vector3,
+    /// The diffuse multiplier of [`m_SunBacklightColor`](crate::graphics_engine::render_engine::RenderEngine::m_SunBacklightColor).
+    pub m_SunBacklightDiffuseMultiplier: f32,
+    /// The specular multiplier of [`m_SunBacklightColor`](crate::graphics_engine::render_engine::RenderEngine::m_SunBacklightColor).
+    pub m_SunBacklightSpecularMultiplier: f32,
+    /// The minimum sun elevation angle in radians. [`SetGlobalShaderConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants)
+    /// rotates the staged sun direction up toward [`vector3_up`](crate::types::math::get_vector3_up) whenever its elevation is below
+    /// this angle.
+    pub m_SunBacklightHeightClamp: f32,
+    /// The sun shadow colour, staged scaled by
+    /// [`m_SunShadowDiffuseMultiplier`](crate::graphics_engine::render_engine::RenderEngine::m_SunShadowDiffuseMultiplier) and
+    /// [`m_SunShadowSpecularMultiplier`](crate::graphics_engine::render_engine::RenderEngine::m_SunShadowSpecularMultiplier).
+    pub m_SunShadowColor: crate::types::math::Vector3,
+    /// The diffuse multiplier of [`m_SunShadowColor`](crate::graphics_engine::render_engine::RenderEngine::m_SunShadowColor).
+    pub m_SunShadowDiffuseMultiplier: f32,
+    /// The specular multiplier of [`m_SunShadowColor`](crate::graphics_engine::render_engine::RenderEngine::m_SunShadowColor).
+    pub m_SunShadowSpecularMultiplier: f32,
+    _field_161c: [u8; 132],
+    /// The ring of scene-colour copies (the screen-space refraction source).
+    /// `CRenderEngine::UpdateRenderContextGlobals` hands the current one to
+    /// [`RenderContext::m_BackBufferTexture`](crate::graphics_engine::graphics_engine::RenderContext::m_BackBufferTexture).
+    pub m_BackBufferCopy: [*mut crate::graphics_engine::graphics_engine::HTexture_t; 4],
+    /// The current slot of [`m_BackBufferCopy`](crate::graphics_engine::render_engine::RenderEngine::m_BackBufferCopy). The
+    /// [`GraphicsEngine::Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw) prologue
+    /// advances it once per frame, wrapping at [`m_BackBufferCopyCount`](crate::graphics_engine::render_engine::RenderEngine::m_BackBufferCopyCount).
+    pub m_CurrBackBufferCopy: u32,
+    /// The number of slots in use in [`m_BackBufferCopy`](crate::graphics_engine::render_engine::RenderEngine::m_BackBufferCopy).
+    pub m_BackBufferCopyCount: u32,
+    /// The scene depth copy, handed to
+    /// [`RenderContext::m_DepthBufferTexture`](crate::graphics_engine::graphics_engine::RenderContext::m_DepthBufferTexture).
+    pub m_DepthBufferCopy: *mut crate::graphics_engine::graphics_engine::HTexture_t,
+    /// The vertex GlobalConstants constant buffer
+    /// ([`RenderContext::m_VPGlobals`](crate::graphics_engine::graphics_engine::RenderContext::m_VPGlobals)).
+    pub m_VPGlobals: *mut ::std::ffi::c_void,
+    /// The fragment GlobalConstants constant buffer
+    /// ([`RenderContext::m_FPGlobals`](crate::graphics_engine::graphics_engine::RenderContext::m_FPGlobals)).
+    pub m_FPGlobals: *mut ::std::ffi::c_void,
+    _field_16e0: [u8; 496],
     /// The render engine's embedded [`ResourceContext`](crate::graphics_engine::render_engine::ResourceContext). `RecreateRenderBlockTypes` passes a
     /// pointer to this field to every type's [`Recreate`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Recreate), and each
     /// type's `RegisterType` passes it to [`Create`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Create) at startup.
     pub m_ResourceContext: crate::graphics_engine::render_engine::ResourceContext,
-    _field_18f0: [u8; 44],
+    _field_18f0: [u8; 8],
+    /// Set while the planar/environment reflection passes draw; `CRenderPass::SetupRenderContext`
+    /// maps it to
+    /// [`RENDERSTATUS_REFLECTIONS`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_REFLECTIONS).
+    pub m_IsRenderingReflections: bool,
+    /// Set while the dynamic shadow passes draw
+    /// ([`RENDERSTATUS_DYNAMIC_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_DYNAMIC_SHADOWMAP)).
+    pub m_IsRenderingDynamicShadowMap: bool,
+    /// Set while the static shadow passes draw
+    /// ([`RENDERSTATUS_STATIC_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_STATIC_SHADOWMAP)).
+    pub m_IsRenderingStaticShadowMap: bool,
+    /// Set while the reflective shadow map passes draw
+    /// ([`RENDERSTATUS_RSM`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_RSM)).
+    pub m_IsRenderingReflectiveShadowMap: bool,
+    _field_18fc: [u8; 32],
     /// The CPU staging copy of the global vertex-program constant buffer (the shaders'
-    /// `GlobalConstants` cbuffer at vertex slot 0, `VP_GLOBAL_SIZE` = 49 float4 rows).
+    /// `GlobalConstants` cbuffer at vertex slot 0, one float4 row per element).
     /// [`SetGlobalShaderProgramCameraConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderProgramCameraConstants)
     /// fills the per-view rows from a [`RenderContext`](crate::graphics_engine::graphics_engine::RenderContext), the fog and atmosphere setters fill rows
     /// 14--24, and [`SetAllGlobalShaderProgramConstants`](crate::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants)
@@ -341,10 +458,12 @@ pub struct RenderEngine {
     /// offset view-projection, and 48 the previous camera position.
     pub m_VPGlobalConstData: [crate::types::math::Vector4; 49],
     /// The CPU staging copy of the global fragment-program constant buffer (the shaders'
-    /// `GlobalConstants` cbuffer at fragment slot 0, `FP_GLOBAL_SIZE` = 95 float4 rows): lighting,
+    /// `GlobalConstants` cbuffer at fragment slot 0, one float4 row per element): lighting,
     /// wetness, shadow, and per-view camera rows filled by
     /// [`SetGlobalShaderConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants), uploaded by
-    /// [`SetAllGlobalShaderProgramConstants`](crate::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants).
+    /// [`SetAllGlobalShaderProgramConstants`](crate::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants). Row 0 `.w`
+    /// is the sea level, and row 8 `.zw` is `(1 / DisplayWidth, 1 / DisplayHeight)` from
+    /// `Graphics::GetDeviceInfo` (the device display size, not the bound render setup's).
     pub m_FPGlobalConstData: [crate::types::math::Vector4; 95],
     _field_221c: [u8; 4],
 }
@@ -363,6 +482,57 @@ impl RenderEngine {
     }
 }
 impl RenderEngine {
+    pub const InitializeSystem_ADDRESS: usize = 0x1401AD550;
+    /// The one-time startup of the render engine (`CRenderEngine::InitializeSystem`). Among its setup
+    /// of the render passes it registers the Z-and-velocity pass's two depth buckets
+    /// ([`RenderPass::Z_AND_VELOCITY_DEPTH_SQ_NEAR`](crate::graphics_engine::render_pass::RenderPass::Z_AND_VELOCITY_DEPTH_SQ_NEAR) and
+    /// [`RenderPass::Z_AND_VELOCITY_DEPTH_SQ_FAR`](crate::graphics_engine::render_pass::RenderPass::Z_AND_VELOCITY_DEPTH_SQ_FAR)).
+    pub unsafe fn InitializeSystem(&mut self, ctx: *const ::std::ffi::c_void) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ctx: *const ::std::ffi::c_void,
+            ) -> bool = ::std::mem::transmute(Self::InitializeSystem_ADDRESS);
+            f(self as *mut Self as _, ctx)
+        }
+    }
+    pub const BeginParticlePassGpuTimingQuery_ADDRESS: usize = 0x140173960;
+    /// Begins the particle pass's GPU timing query and adapts
+    /// [`m_TessFactorScale`](crate::graphics_engine::render_engine::RenderEngine::m_TessFactorScale) and
+    /// [`m_ParticlePassGpuIntense`](crate::graphics_engine::render_engine::RenderEngine::m_ParticlePassGpuIntense) from its average GPU time.
+    pub unsafe fn BeginParticlePassGpuTimingQuery(
+        &mut self,
+        ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            ) = ::std::mem::transmute(Self::BeginParticlePassGpuTimingQuery_ADDRESS);
+            f(self as *mut Self as _, ctx)
+        }
+    }
+    pub const SetFog_ADDRESS: usize = 0x140184F40;
+    /// Builds the two-layer fog GlobalConstants from the render engine's time-of-day fog colours and
+    /// distance and height ramps, using the render camera height
+    /// ([`RenderContext::m_RenderCameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderCameraPosition)`.y`).
+    /// `reflected` substitutes a fixed height of 1024 for the camera height (the reflection passes).
+    /// Called at the tail of [`SetGlobalShaderConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants) and
+    /// [`SetGlobalShaderProgramCameraConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderProgramCameraConstants).
+    pub unsafe fn SetFog(
+        &mut self,
+        ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+        reflected: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+                reflected: bool,
+            ) = ::std::mem::transmute(Self::SetFog_ADDRESS);
+            f(self as *mut Self as _, ctx, reflected)
+        }
+    }
     pub const PostDraw_ADDRESS: usize = 0x1401C2350;
     /// The late render-pass step: finalizes and copies render targets under the context mutex.
     pub unsafe fn PostDraw(
@@ -399,14 +569,18 @@ impl RenderEngine {
         }
     }
     pub const PreDraw_ADDRESS: usize = 0x140186760;
-    /// The pre-pass step: iterates the pre-pass categories (`1..=45` -- terrain-patch prep, the sky
-    /// lighting LUT, planar and environment reflections, cloud shadows, vegetation, the static and
-    /// dynamic sun-shadow cascade atlas, the reflective-shadow passes, the water-simulation compute, and
-    /// the rain occluder) and vtable-dispatches each [`RenderPass`](crate::graphics_engine::render_pass::RenderPass)'s `Draw`, feeding it the render
+    /// The pre-pass step: iterates the pre-pass ids from
+    /// [`RP_TERRAINPATCH_CLEAR`](crate::graphics_engine::render_engine::RenderPassId::RP_TERRAINPATCH_CLEAR) through
+    /// [`RP_RAIN_OCCLUDER`](crate::graphics_engine::render_engine::RenderPassId::RP_RAIN_OCCLUDER) (terrain-patch prep, the sky lighting
+    /// LUT, planar and environment reflections, cloud shadows, vegetation, the static and dynamic
+    /// sun-shadow cascade atlas, the reflective-shadow passes, the water-simulation compute, and the
+    /// rain occluder) and vtable-dispatches each [`RenderPass`](crate::graphics_engine::render_pass::RenderPass)'s `Draw`, feeding it the render
     /// context. Called from `HandleDrawThreadTask` before the GBuffer range. Each pass's
-    /// [`m_Enabled`](crate::graphics_engine::render_pass::RenderPassState::m_Enabled) gates whether it draws;
-    /// the pre-pass cameras are the sun / reflection / world-space cameras (own camera, `RenderPass +
-    /// 0x870`), never the per-eye render camera, except terrain-patch prep (`1..=7`), which falls
+    /// [`m_Enabled`](crate::graphics_engine::render_pass::RenderPassState::m_Enabled) gates whether it draws.
+    /// The pre-pass cameras are the sun, reflection, and world-space cameras (the pass's own external
+    /// camera), not the render camera. The exception is terrain-patch prep
+    /// ([`RP_TERRAINPATCH_CLEAR`](crate::graphics_engine::render_engine::RenderPassId::RP_TERRAINPATCH_CLEAR) through
+    /// [`RP_TERRAINPATCH_ENUMERATION`](crate::graphics_engine::render_engine::RenderPassId::RP_TERRAINPATCH_ENUMERATION)), which falls
     /// through to the render camera.
     pub unsafe fn PreDraw(
         &mut self,
@@ -421,7 +595,8 @@ impl RenderEngine {
         }
     }
     pub const DrawGBuffer_ADDRESS: usize = 0x140186810;
-    /// The GBuffer fill: binds two global textures, then draws the GBuffer pass range (the depth and
+    /// The GBuffer fill: binds two global textures on fragment texture slots 40 and 41 (and a sampler
+    /// on slot 9), then draws the GBuffer pass range (the depth and
     /// velocity prefix, static and dynamic models, and decals).
     pub unsafe fn DrawGBuffer(
         &mut self,
@@ -531,7 +706,7 @@ impl RenderEngine {
     }
     pub const SetGlobalVertexProgramConstants_ADDRESS: usize = 0x1401738F0;
     /// Writes `count` float4 rows into [`m_VPGlobalConstData`](crate::graphics_engine::render_engine::RenderEngine::m_VPGlobalConstData)
-    /// starting at row `index` (bounds-asserted against `VP_GLOBAL_SIZE` = 49). The staging copy
+    /// starting at row `index` (bounds-asserted against the array's length). The staging copy
     /// only; the GPU upload happens in
     /// [`SetAllGlobalShaderProgramConstants`](crate::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants).
     pub unsafe fn SetGlobalVertexProgramConstants(
@@ -614,11 +789,10 @@ impl std::convert::AsMut<RenderEngine> for RenderEngine {
 /// post-effects at `RP_POSTEFFECTS`. Named [`RenderPassId`](crate::graphics_engine::render_engine::RenderPassId) to avoid clashing with the [`RenderPass`](crate::graphics_engine::render_pass::RenderPass)
 /// type.
 ///
-/// Verified against the retail pass-name switch ([`GetRenderPassName`](crate::graphics_engine::render_engine::GetRenderPassName)): relative to the 2016 dump's
-/// `ERenderPass` header, retail inserts [`RenderPassId::RP_VEGETATION_TRANSPARENT_AOIT`](crate::graphics_engine::render_engine::RenderPassId::RP_VEGETATION_TRANSPARENT_AOIT), shifting
-/// everything above by one. [`RenderPassId::RP_PARTICLE_RIBBON`](crate::graphics_engine::render_engine::RenderPassId::RP_PARTICLE_RIBBON) is the one id the name switch does
-/// not name — it returns `"NONE"` for it — but the pass itself is live: the effect system creates it
-/// and the ribbon instantiator enqueues onto it, so the id is not a hole.
+/// Verified against the pass-name switch ([`GetRenderPassName`](crate::graphics_engine::render_engine::GetRenderPassName)).
+/// [`RenderPassId::RP_PARTICLE_RIBBON`](crate::graphics_engine::render_engine::RenderPassId::RP_PARTICLE_RIBBON) is the one id the name switch does not name — it returns
+/// `"NONE"` for it — but the pass itself is live: the effect system creates it and the ribbon
+/// instantiator enqueues onto it, so the id is not a hole.
 pub enum RenderPassId {
     RP_NONE = 0isize as _,
     RP_TERRAINPATCH_CLEAR = 1isize as _,
@@ -868,8 +1042,8 @@ impl std::convert::AsMut<ShaderCache> for ShaderCache {
 }
 #[repr(C, align(8))]
 /// The immediate operands inside the terrain setup types' `Create` functions that size the GPU
-/// detail-tessellation budget buffers (see `CRenderBlockTerrainDetailSetup::Create` at
-/// `0x14032C000` and `CRenderBlockTerrainSetup::Create` at `0x14032EA10`). The detail-quad
+/// detail-tessellation budget buffers (see `CRenderBlockTerrainDetailSetup::Create` and
+/// `CRenderBlockTerrainSetup::Create`). The detail-quad
 /// pipeline allocates from these buffers with unbounded GPU cursors, so their sizes are the hard
 /// budget of the detail tessellation skin; each constant is the address of a 32-bit element-count
 /// immediate, paired with the shipped value in [`TerrainDetailBudgetValues`](crate::graphics_engine::render_engine::TerrainDetailBudgetValues).
@@ -999,6 +1173,23 @@ pub unsafe fn TerrainPatchSystemUpdate(
             ctx: *mut ::std::ffi::c_void,
         ) = ::std::mem::transmute(TerrainPatchSystemUpdate_ADDRESS);
         f(handle, ctx)
+    }
+}
+pub const GetRenderPassInfo_ADDRESS: usize = 0x1401743A0;
+/// Returns the display name of render pass `pass` and writes its category (`ERenderPassCategory`) to
+/// `out_category` and the name to `out_name`; unknown ids give `"NONE"` and category 0.
+pub unsafe fn GetRenderPassInfo(
+    pass: crate::graphics_engine::render_engine::RenderPassId,
+    out_category: *mut i32,
+    out_name: *mut *const u8,
+) -> *const u8 {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            pass: crate::graphics_engine::render_engine::RenderPassId,
+            out_category: *mut i32,
+            out_name: *mut *const u8,
+        ) -> *const u8 = ::std::mem::transmute(GetRenderPassInfo_ADDRESS);
+        f(pass, out_category, out_name)
     }
 }
 impl RenderBlockTypeBase {

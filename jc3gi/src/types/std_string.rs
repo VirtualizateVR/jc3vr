@@ -2,15 +2,15 @@
 #[repr(C, align(8))]
 /// A `std::string` in the MSVC layout: the small-string-optimization buffer/pointer union
 /// (`_Bx`), then the length (`_Mysize`) and capacity (`_Myres`). The string is stored inline in
-/// [`buffer`](crate::types::std_string::String::buffer) while `capacity < 16`; otherwise the first eight bytes of the
-/// buffer are a heap pointer to the character data.
+/// [`buffer`](crate::types::std_string::String::buffer) while [`capacity`](crate::types::std_string::String::capacity) is less than the buffer's length;
+/// otherwise the buffer starts with a heap pointer to the character data.
 pub struct String {
-    /// `_Bx`: the inline character buffer, or (heap case) a `char*` in the first eight bytes.
+    /// `_Bx`: the inline character buffer, or (heap case) a `char*` at its start.
     pub buffer: [u8; 16],
     /// `_Mysize`: the length in bytes, excluding the NUL terminator.
     pub size: u64,
-    /// `_Myres`: the allocated capacity in bytes, excluding the NUL terminator. `>= 16` means the
-    /// data lives on the heap.
+    /// `_Myres`: the allocated capacity in bytes, excluding the NUL terminator. A capacity of at
+    /// least the length of [`buffer`](crate::types::std_string::String::buffer) means the data lives on the heap.
     pub capacity: u64,
 }
 fn _String_size_check() {

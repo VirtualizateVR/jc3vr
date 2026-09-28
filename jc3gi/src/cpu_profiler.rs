@@ -4,10 +4,10 @@
 /// begin/end pairs into a triple-buffered counter ring, and a once-per-frame update converts the
 /// completed ring slot into per-phase milliseconds with a rolling 30-frame peak.
 ///
-/// In the release build the machinery is dead: [`Update`](crate::cpu_profiler::CpuProfiler::Update) is compiled to an
+/// The machinery is dead: [`Update`](crate::cpu_profiler::CpuProfiler::Update) is compiled to an
 /// empty function, and the phase brackets that write [`m_Counters`](crate::cpu_profiler::CpuProfiler::m_Counters) are
 /// compiled out of `CGame::Update` and the game states, so every field stays zero. The consumers
-/// remain -- `CBorkReport`'s telemetry serialises [`m_Time`](crate::cpu_profiler::CpuProfiler::m_Time) via
+/// remain -- [`BorkReport`](crate::bork_report::BorkReport)'s telemetry serialises [`m_Time`](crate::cpu_profiler::CpuProfiler::m_Time) via
 /// [`GetScopeName`](crate::cpu_profiler::CpuProfiler::GetScopeName), and `CGraphicsEngine::DispatchDraw` forwards
 /// [`m_Index`](crate::cpu_profiler::CpuProfiler::m_Index) to the draw task -- but they only ever read zeros.
 pub struct CpuProfiler {
@@ -33,17 +33,9 @@ fn _CpuProfiler_size_check() {
     unreachable!()
 }
 impl CpuProfiler {
-    pub unsafe fn get() -> Option<&'static mut Self> {
-        unsafe {
-            let ptr: *mut Self = *(5417315824usize as *mut *mut Self);
-            ptr.as_mut()
-        }
-    }
-}
-impl CpuProfiler {
     pub const Update_ADDRESS: usize = 0x140062490;
     /// Converts the completed ring slot's QPC deltas into [`m_Time`](crate::cpu_profiler::CpuProfiler::m_Time)
-    /// milliseconds and rolls the peak window. Compiled to an empty function in the release build;
+    /// milliseconds and rolls the peak window. Compiled to an empty function;
     /// the once-per-frame call at the top of [`Update`](crate::game::Game::Update) remains.
     pub unsafe fn Update(&mut self) {
         unsafe {
@@ -54,8 +46,8 @@ impl CpuProfiler {
         }
     }
     pub const GetScopeName_ADDRESS: usize = 0x1400624A0;
-    /// The phase's display name from the static 15-entry name table at `0x142D3A150`
-    /// (`"FRAME"`, `"DRAW"`, `"UPDATE_ALL"`, ...). Does not read `self`.
+    /// The phase's display name from [`cpu_scope_names`](get_cpu_scope_names) (`"FRAME"`, `"DRAW"`, `"UPDATE_ALL"`,
+    /// ...). Does not read `self`.
     pub unsafe fn GetScopeName(&self, id: crate::cpu_profiler::CpuScopeId) -> *const u8 {
         unsafe {
             let f: unsafe extern "system" fn(
@@ -104,4 +96,15 @@ fn _CpuScopeId_size_check() {
         ::std::mem::transmute::<[u8; 0x4], CpuScopeId>([0u8; 0x4]);
     }
     unreachable!()
+}
+/// The engine's CPU profiler instance (`g_CpuProfiler`), a statically allocated object rather than a
+/// pointer: [`BorkReport::WriteMetrics`](crate::bork_report::BorkReport::WriteMetrics) passes its address
+/// directly as `this` to [`CpuProfiler::GetScopeName`](crate::cpu_profiler::CpuProfiler::GetScopeName).
+pub unsafe fn get_cpu_profiler() -> &'static mut crate::cpu_profiler::CpuProfiler {
+    unsafe { &mut *(0x142E5ADF0 as *mut crate::cpu_profiler::CpuProfiler) }
+}
+/// The static name table behind [`CpuProfiler::GetScopeName`](crate::cpu_profiler::CpuProfiler::GetScopeName): one name string per
+/// [`CpuScopeId`](crate::cpu_profiler::CpuScopeId) phase, indexed by the id.
+pub unsafe fn get_cpu_scope_names() -> &'static mut [*const u8; 15] {
+    unsafe { &mut *(0x142D3A150 as *mut [*const u8; 15]) }
 }

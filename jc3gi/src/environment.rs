@@ -38,8 +38,7 @@ impl std::convert::AsMut<Atmosphere> for Atmosphere {
 pub struct DayCycle {}
 impl DayCycle {
     pub const Apply_ADDRESS: usize = 0x140495F30;
-    /// The in-engine reference that reads and writes both the time of day and the weather each cycle:
-    /// the canonical example of driving both systems.
+    /// Reads and writes both the time of day and the weather each cycle.
     pub unsafe fn Apply(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -92,18 +91,17 @@ impl std::convert::AsMut<LandscapeManager> for LandscapeManager {
 #[repr(C, align(8))]
 /// The live weather state: a continuous scalar model.
 ///
-/// **Caution:** [`WeatherController`](crate::environment::WeatherController)'s per-frame update overwrites these scalars toward its own
-/// targets unless a force flag or a named weather event holds them, so prefer firing an event (see
-/// [`WeatherController::Init`](crate::environment::WeatherController::Init)) to pin a state.
+/// [`WeatherController`](crate::environment::WeatherController)'s per-frame update overwrites these scalars toward its own targets unless a
+/// force flag or a named weather event (see [`WeatherController::Init`](crate::environment::WeatherController::Init)) holds them.
 pub struct Weather {
     _field_0: [u8; 28],
     /// The snow blend, in `0..1`.
     ///
-    /// **Unverified:** from the dump's struct layout, not instruction-verified.
+    /// The offset is unconfirmed.
     pub m_SnowRatio: f32,
     /// The rain intensity, in `0..1`.
     ///
-    /// **Unverified:** from the dump's struct layout, not instruction-verified.
+    /// The offset is unconfirmed.
     pub m_RainIntensity: f32,
     _field_24: [u8; 452],
     /// The storm severity, from roughly `0.1` (clear) to `4.0` (full storm).
@@ -118,8 +116,8 @@ fn _Weather_size_check() {
 }
 impl Weather {
     pub const SetSeverity_ADDRESS: usize = 0x1403A2290;
-    /// Sets `m_Severity` and clears the severity-update flag. See the type's caution about the
-    /// controller overwriting it.
+    /// Sets `m_Severity` and clears the severity-update flag. The controller's per-frame update
+    /// overwrites the result unless a force flag or weather event holds it (see [`Weather`](crate::environment::Weather)).
     pub unsafe fn SetSeverity(&mut self, severity: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, severity: f32) = ::std::mem::transmute(
@@ -174,9 +172,8 @@ pub struct WeatherController {}
 impl WeatherController {
     pub const Init_ADDRESS: usize = 0x1403A24F0;
     /// Subscribes the named weather events (the `EVENT_*` constants, plus `cloud_base` and
-    /// `cloud_height`). Firing one via the engine's event send is the robust way to hold a weather
-    /// state, since the controller's per-frame update otherwise overwrites the [`Weather`](crate::environment::Weather)
-    /// scalars.
+    /// `cloud_height`). A fired event holds its weather state; without one, the controller's
+    /// per-frame update overwrites the [`Weather`](crate::environment::Weather) scalars.
     pub unsafe fn Init(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -211,8 +208,8 @@ impl std::convert::AsMut<WeatherController> for WeatherController {
 #[repr(C, align(8))]
 pub struct WorldTime {
     _field_0: [u8; 128],
-    /// The current time of day, in hours. The render engine copies this out each frame, so a write
-    /// here propagates to lighting.
+    /// The current time of day, in hours. The render engine copies this out each frame for
+    /// lighting.
     pub m_CurrentTimeOfDay: f32,
     pub m_PauseTimeOfDay: f32,
     pub m_SpeedMultiplicator: f32,
@@ -235,7 +232,7 @@ impl WorldTime {
 impl WorldTime {
     pub const SetTimeOfDay_ADDRESS: usize = 0x14052CD20;
     /// Sets the time of day in hours: wraps to a 24-hour range, fires the per-hour event, and clamps
-    /// against `m_PauseTimeOfDay`. Preferred over writing `m_CurrentTimeOfDay` directly.
+    /// against `m_PauseTimeOfDay`.
     pub unsafe fn SetTimeOfDay(&mut self, hours: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, hours: f32) = ::std::mem::transmute(

@@ -12,8 +12,9 @@ impl NStateTask_InputSurfaceSwimTask {
     /// `GameCameraManager::GetInputMatrix`) and, for the player, the direction to the aim-target
     /// position, then dispatches swim acts by the angle from the body forward
     /// ([`ControllerUtility::GetDeltaAngleFromOrientation`](crate::input::controller_utility::ControllerUtility::GetDeltaAngleFromOrientation)):
-    /// below 65 degrees the forward crawl-start act, between 65 and 180 degrees the directional
-    /// 120-degree turn acts (`ACT_SURFACE_SWIM_START_120R/L` while moving,
+    /// below [`SWIM_TURN_ACT_MIN_ANGLE`](crate::input::swim::SWIM_TURN_ACT_MIN_ANGLE) the forward crawl-start act, from there up to
+    /// [`SWIM_TURN_ACT_MAX_ANGLE`](crate::input::swim::SWIM_TURN_ACT_MAX_ANGLE) the directional 120-degree turn acts
+    /// (`ACT_SURFACE_SWIM_START_120R/L` while moving,
     /// `ACT_SURFACE_IDLE_QUICKTURN_120R/L` while idle and wielding a weapon, measured against the
     /// aim direction). When a turn is latched it writes the angle to the blackboard
     /// ([`SWIM_TURN_ANGLE_ID`](crate::blackboard::ObjectBlackboard::SWIM_TURN_ANGLE_ID)) and stores the
@@ -149,6 +150,18 @@ for NStateTask_MovementUnderWaterSwimTask {
         self
     }
 }
+/// The fixed surface-swim facing turn rate (degrees per second) while aiming or planting
+/// explosives.
+pub const SWIM_AIM_TURN_RATE: f32 = 300.0;
+/// The upper bound (degrees) of the swim input tasks' turn-act angle range.
+pub const SWIM_TURN_ACT_MAX_ANGLE: f32 = 180.0;
+/// The absolute angle (degrees) from the body forward below which the swim input tasks queue the
+/// forward crawl-start act, and at or above which they queue a directional 120-degree turn act.
+pub const SWIM_TURN_ACT_MIN_ANGLE: f32 = 65.0;
+/// The factor the swim movement cores multiply a turn rate by to get degrees per second: the
+/// surface core scales the movement settings' swim slerp speeds by it, and the underwater core
+/// uses it as a fixed rate.
+pub const SWIM_TURN_RATE_SCALE: f32 = 30.0;
 pub const UpdateSurfaceMovement_ADDRESS: usize = 0x1407E9440;
 /// The surface-swim movement core, called per frame by
 /// [`NStateTask_MovementSurfaceSwimTask::Update`](crate::input::swim::NStateTask_MovementSurfaceSwimTask::Update) for the player. Computes buoyancy and the swim
@@ -211,5 +224,20 @@ pub unsafe fn UpdateUnderwaterMovement(
             p6: bool,
         ) = ::std::mem::transmute(UpdateUnderwaterMovement_ADDRESS);
         f(character, dt, target_angle_offset, ang_corr_seg_id, steering_seg_id, p6)
+    }
+}
+pub const UpdateSurfaceMovementNPC_ADDRESS: usize = 0x1407A5710;
+/// The surface-swim movement core for NPCs, called by
+/// [`NStateTask_MovementSurfaceSwimTask::Update`](crate::input::swim::NStateTask_MovementSurfaceSwimTask::Update) when the character is not the player.
+pub unsafe fn UpdateSurfaceMovementNPC(
+    character: *mut crate::character::character::Character,
+    dt: f32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            character: *mut crate::character::character::Character,
+            dt: f32,
+        ) = ::std::mem::transmute(UpdateSurfaceMovementNPC_ADDRESS);
+        f(character, dt)
     }
 }

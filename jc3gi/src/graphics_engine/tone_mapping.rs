@@ -73,8 +73,8 @@ pub struct ToneMappingEffect {
     /// The active histogram bucket count.
     pub m_NumBuckets: u32,
     /// The ping-pong selector for the internal histogram ring the per-frame exposure step advances:
-    /// [`Update`](crate::graphics_engine::tone_mapping::ToneMappingEffect::Update) increments it each real frame, so a caller that runs `Update`
-    /// once per eye steps it twice per frame and can read back a stale histogram.
+    /// [`Update`](crate::graphics_engine::tone_mapping::ToneMappingEffect::Update) increments it on every call, and the engine calls `Update` once per
+    /// real frame.
     pub m_OcclusionQuerySlotSelector: u32,
     _field_580: [u8; 1648],
     /// The applied auto-exposure multiplier: the clamped, smoothed (EMA) value

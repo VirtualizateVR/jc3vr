@@ -97,10 +97,12 @@ macro_rules! __bitflags {
         ::core::fmt::UpperHex::fmt(& self.bits, f) } }
     };
 }
+pub mod ai;
 pub mod aim;
 pub mod animation;
 pub mod audio;
 pub mod blackboard;
+pub mod bork_report;
 pub mod camera;
 pub mod character;
 pub mod clock;
@@ -118,10 +120,14 @@ pub mod heat_manager;
 pub mod input;
 pub mod patch_system;
 pub mod physics;
+pub mod profile_manager;
+pub mod resource_loader;
 pub mod slow_motion;
 pub mod spawn_system;
 pub mod state;
+pub mod steering_frame_profiler;
 pub mod types;
 pub mod ui;
+pub mod vehicle;
 pub mod water_patch_manager;
 pub mod window;

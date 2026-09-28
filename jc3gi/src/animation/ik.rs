@@ -4,8 +4,8 @@
 /// The effector slot a HumanIK node drives, as assigned by the engine's node-to-effector mapping.
 /// The mapping is a fixed switch over `HIKNodeId`, so these ids are constant across characterizations;
 /// a node with no effector maps to [`EFFECTOR_SLOTS`](crate::animation::ik::HumanIK::EFFECTOR_SLOTS) instead, and
-/// [`GetEffectorIdFromBoneIndex`](crate::animation::ik::HumanIK::GetEffectorIdFromBoneIndex) reports `-1` for a bone that
-/// is not mapped at all.
+/// [`GetEffectorIdFromBoneIndex`](crate::animation::ik::HumanIK::GetEffectorIdFromBoneIndex) reports
+/// [`NO_EFFECTOR`](crate::animation::ik::HumanIK::NO_EFFECTOR) for a bone that is not mapped at all.
 ///
 /// Only nodes the characterization actually uses are present in a given solver, so an id here is the
 /// slot a node *would* occupy rather than a promise that the rig has that node.
@@ -76,8 +76,8 @@ impl std::convert::AsMut<EffectorIdChain> for EffectorIdChain {
 /// [`m_HIKNodeAndBonePairs`](crate::animation::ik::HumanIK::m_HIKNodeAndBonePairs), which holds the same relation in a form
 /// that can be scanned.
 pub struct EffectorIdTable {
-    /// The bucket array: `m_HashTableLength` `u16` slots, each `0xFFFF` (empty) or an index into
-    /// `m_ChainPool`.
+    /// The bucket array: `m_HashTableLength` `u16` slots, each [`EMPTY_INDEX`](crate::animation::ik::EffectorIdTable::EMPTY_INDEX)
+    /// or an index into `m_ChainPool`.
     pub m_HashTable: *mut u16,
     pub m_ChainPool: *mut crate::animation::ik::EffectorIdChain,
     pub m_HashTableLength: u16,
@@ -90,6 +90,11 @@ fn _EffectorIdTable_size_check() {
     unreachable!()
 }
 impl EffectorIdTable {}
+impl EffectorIdTable {
+    /// The index that marks an empty bucket in [`m_HashTable`](crate::animation::ik::EffectorIdTable::m_HashTable) and the end of
+    /// a chain in [`EffectorIdChain::m_Next`](crate::animation::ik::EffectorIdChain::m_Next).
+    pub const EMPTY_INDEX: u16 = 65535;
+}
 impl std::convert::AsRef<EffectorIdTable> for EffectorIdTable {
     fn as_ref(&self) -> &EffectorIdTable {
         self
@@ -185,7 +190,7 @@ impl std::convert::AsMut<EffectorTargetRotation> for EffectorTargetRotation {
 /// The engine's wrapper over an Autodesk HumanIK character solver. It owns the HIK character and
 /// state objects, holds the queued effector targets for each [`Pass`](crate::animation::ik::Pass), and holds the per-effector
 /// control-value arrays (pull / resistance / translation-reach / rotation-reach), indexed by
-/// effector id (`0..44`).
+/// effector id (below [`EFFECTOR_SLOTS`](crate::animation::ik::HumanIK::EFFECTOR_SLOTS)).
 ///
 /// # Per-frame lifecycle
 ///
@@ -235,7 +240,8 @@ pub struct HumanIK {
     pub m_HIKNodeAndBonePairs: crate::types::std_vector::Vector<
         crate::animation::ik::NodeAndBonePair,
     >,
-    /// A `-2`-terminated list of the used `HIKNodeId`s, in bone-index order.
+    /// The used `HIKNodeId`s, in bone-index order, terminated by
+    /// [`USED_HIK_NODE_IDS_END`](crate::animation::ik::HumanIK::USED_HIK_NODE_IDS_END).
     pub m_UsedHIKNodeIds: *mut i32,
     pub m_TQS: crate::types::std_vector::Vector<crate::animation::ik::Tqs>,
     pub m_EffectorIds: crate::animation::ik::EffectorIdTable,
@@ -326,10 +332,11 @@ impl HumanIK {
         }
     }
     pub const GetEffectorIdFromBoneIndex_ADDRESS: usize = 0x1403E2BF0;
-    /// Maps a skeleton bone index to its HumanIK effector id (`0..44`) via
-    /// [`m_EffectorIds`](crate::animation::ik::HumanIK::m_EffectorIds), or `-1` if the bone has no effector mapping. The
-    /// bone index is in the same space as the character's bone matrices/joints (the value the safe-
-    /// bone-index table resolves to). The head bone maps to effector `15`; the chest end effector is
+    /// Maps a skeleton bone index to its HumanIK effector id (below
+    /// [`EFFECTOR_SLOTS`](crate::animation::ik::HumanIK::EFFECTOR_SLOTS)) via [`m_EffectorIds`](crate::animation::ik::HumanIK::m_EffectorIds), or
+    /// [`NO_EFFECTOR`](crate::animation::ik::HumanIK::NO_EFFECTOR) if the bone has no effector mapping. The bone index is in
+    /// the same space as the character's bone matrices/joints (the value the safe-bone-index table
+    /// resolves to). The head bone maps to [`Effector::HEAD`](crate::animation::ik::Effector::HEAD); the chest end effector is
     /// [`GetChestEndEffectorId`](crate::animation::ik::HumanIK::GetChestEndEffectorId).
     pub unsafe fn GetEffectorIdFromBoneIndex(&self, bone_index: u32) -> i32 {
         unsafe {
@@ -341,7 +348,7 @@ impl HumanIK {
         }
     }
     pub const GetChestEndEffectorId_ADDRESS: usize = 0x1403BCDD0;
-    /// The effector id of the chest end effector (a constant `10`).
+    /// The effector id of the chest end effector (always [`Effector::CHEST_END`](crate::animation::ik::Effector::CHEST_END)).
     pub unsafe fn GetChestEndEffectorId(&self) -> i32 {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
@@ -354,16 +361,17 @@ impl HumanIK {
     /// Queues a positional effector target on the given pass, or updates the existing target for the
     /// same effector. `pos` is in character-model space. `effector_interpolation` eases the reach
     /// weight in at `effector_interpolation_rate`; `effector_blend_out` eases it out at
-    /// `effector_blend_out_rate` once the target stops being supplied. The engine's own hand pass
-    /// calls this with `(interpolation=false, interpolation_rate=3.0, blend_out=true,
-    /// blend_out_rate=1.5)` and then writes `m_TargetReachT`(HumanIK::m_TargetReachT)`[effector]`
-    /// with the desired reach weight.
+    /// `effector_blend_out_rate` once the target stops being supplied. The engine's hand pass calls
+    /// this with interpolation off at
+    /// [`HAND_PASS_INTERPOLATION_RATE`](crate::animation::ik::HumanIK::HAND_PASS_INTERPOLATION_RATE) and blend-out on at
+    /// [`HAND_PASS_BLEND_OUT_RATE`](crate::animation::ik::HumanIK::HAND_PASS_BLEND_OUT_RATE), and then writes the desired
+    /// reach weight to the effector's entry of [`m_TargetReachT`](crate::animation::ik::HumanIK::m_TargetReachT).
     ///
     /// A pass holds at most one position target per effector: if an entry for `effector` already
     /// exists — including one [`ClearTargets`](crate::animation::ik::HumanIK::ClearTargets) has invalidated but not yet
     /// removed — it is overwritten in place and re-validated rather than a second entry being added.
     ///
-    /// **Provenance:** the prototype is verified against the debug PDB.
+    /// The prototype is confirmed.
     pub unsafe fn AddEffectorTargetPosition(
         &mut self,
         effector: i32,
@@ -641,9 +649,41 @@ impl HumanIK {
     }
 }
 impl HumanIK {
-    /// The number of effector-control slots: the valid range of an effector id (`0..44`) and the
+    /// The number of effector-control slots: the exclusive upper bound of an effector id and the
     /// length of each per-effector control-value array.
     pub const EFFECTOR_SLOTS: u64 = 44;
+    /// The blend-out rate, per second, the hand pass passes to
+    /// [`AddEffectorTargetPosition`](crate::animation::ik::HumanIK::AddEffectorTargetPosition).
+    pub const HAND_PASS_BLEND_OUT_RATE: f32 = 1.5;
+    /// The interpolation rate the hand pass (`CCharacter::UpdateSecondaryHandIKPass`)
+    /// passes to [`AddEffectorTargetPosition`](crate::animation::ik::HumanIK::AddEffectorTargetPosition).
+    pub const HAND_PASS_INTERPOLATION_RATE: f32 = 3.0;
+    /// The Autodesk solving-step bitmask for [`SolveStep::ARMS`](crate::animation::ik::SolveStep::ARMS).
+    pub const HIK_SOLVING_STEP_ARMS: i32 = 96;
+    /// The Autodesk solving-step bitmask for [`SolveStep::FULL_BODY`](crate::animation::ik::SolveStep::FULL_BODY).
+    pub const HIK_SOLVING_STEP_FULL_BODY: i32 = 65529;
+    /// The Autodesk solving-step bitmask for [`SolveStep::FULL_BODY_NO_PULL`](crate::animation::ik::SolveStep::FULL_BODY_NO_PULL): the full-body mask
+    /// without the pull stages.
+    pub const HIK_SOLVING_STEP_FULL_BODY_NO_PULL: i32 = 57848;
+    /// The Autodesk solving-step bitmask for [`SolveStep::LEFT_ARM`](crate::animation::ik::SolveStep::LEFT_ARM).
+    pub const HIK_SOLVING_STEP_LEFT_ARM: i32 = 32;
+    /// The Autodesk solving-step bitmask for [`SolveStep::RIGHT_ARM`](crate::animation::ik::SolveStep::RIGHT_ARM).
+    pub const HIK_SOLVING_STEP_RIGHT_ARM: i32 = 64;
+    /// The Autodesk solving-step bitmask for [`SolveStep::SPINE_HEAD_LOWER_BODY`](crate::animation::ik::SolveStep::SPINE_HEAD_LOWER_BODY).
+    pub const HIK_SOLVING_STEP_SPINE_HEAD_LOWER_BODY: i32 = 57728;
+    /// The Autodesk solving-step bitmask for [`SolveStep::SPINE_HEAD_ONLY`](crate::animation::ik::SolveStep::SPINE_HEAD_ONLY).
+    pub const HIK_SOLVING_STEP_SPINE_HEAD_ONLY: i32 = 24576;
+    /// The Autodesk solving-step bitmask [`Solve`](crate::animation::ik::HumanIK::Solve) passes to `HIKSetIKSolvingStep` for
+    /// [`SolveStep::SPINE_ONLY`](crate::animation::ik::SolveStep::SPINE_ONLY).
+    pub const HIK_SOLVING_STEP_SPINE_ONLY: i32 = 16384;
+    /// The Autodesk solving-step bitmask for [`SolveStep::UPPER_BODY`](crate::animation::ik::SolveStep::UPPER_BODY).
+    pub const HIK_SOLVING_STEP_UPPER_BODY: i32 = 26233;
+    /// The value [`GetEffectorIdFromBoneIndex`](crate::animation::ik::HumanIK::GetEffectorIdFromBoneIndex) returns for a
+    /// bone with no effector mapping.
+    pub const NO_EFFECTOR: i32 = -1;
+    /// The terminator [`Init`](crate::animation::ik::HumanIK::Init) writes after the last entry of
+    /// [`m_UsedHIKNodeIds`](crate::animation::ik::HumanIK::m_UsedHIKNodeIds).
+    pub const USED_HIK_NODE_IDS_END: i32 = -2;
 }
 impl std::convert::AsRef<HumanIK> for HumanIK {
     fn as_ref(&self) -> &HumanIK {

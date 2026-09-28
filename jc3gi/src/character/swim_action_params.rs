@@ -2,10 +2,10 @@
 #[repr(C, align(4))]
 /// `SSwimActionParams`: the per-character state the swim locomotion family carries across frames,
 /// embedded in [`Character`](crate::character::character::Character). Constructed by
-/// `SSwimActionParams::SSwimActionParams` (0x140_779_BF0), which is where the fixed capsule offsets
-/// below get their values. Only the members needed so far are bound; the rest of the struct
-/// (momentum, transition and warping state, the surface-plane quaternions, the procedural anim
-/// amounts) is covered by the minimum size.
+/// [`Construct`](crate::character::swim_action_params::SwimActionParams::Construct), which is where the fixed capsule offsets below get their
+/// values. Only some members are bound; the rest of the struct (momentum, transition and warping
+/// state, the surface-plane quaternions, the procedural anim amounts) is covered by the minimum
+/// size.
 pub struct SwimActionParams {
     /// The rigid transform from the character's orientation frame to the physics capsule frame
     /// while swimming underwater: `RotationX(-1.256636)` (about -72 degrees) with a small downward
@@ -58,7 +58,19 @@ fn _SwimActionParams_size_check() {
     }
     unreachable!()
 }
-impl SwimActionParams {}
+impl SwimActionParams {
+    pub const Construct_ADDRESS: usize = 0x140779BF0;
+    /// `SSwimActionParams::SSwimActionParams`: initializes the parameters, including the fixed
+    /// capsule offsets and their inverses.
+    pub unsafe fn Construct(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
 impl std::convert::AsRef<SwimActionParams> for SwimActionParams {
     fn as_ref(&self) -> &SwimActionParams {
         self

@@ -434,8 +434,8 @@ impl std::convert::AsMut<RenderInstance> for RenderInstance {
     }
 }
 #[repr(C, align(8))]
-/// The base render pass (`NGraphicsEngine::CRenderPass`, 0x8C0 bytes in the release build).
-/// Specialized passes derive from it, so only the base extent is claimed here.
+/// The base render pass (`NGraphicsEngine::CRenderPass`). Specialized passes derive from it and
+/// extend past the base extent.
 pub struct RenderPass {
     _field_0: [u8; 40],
     /// The list that new render-block-items append to this frame. Each rotation,
@@ -451,7 +451,30 @@ pub struct RenderPass {
     /// Whether the pass renders back-to-front (the alpha-blend render setting). The `Auto` sort
     /// method resolves to `BackToFront` when set, `FrontToBackBucketed` otherwise.
     pub m_RenderBackToFront: i32,
-    _field_4c: [u8; 66],
+    _field_4c: [u8; 12],
+    /// The pass's stencil depth-fail operation (an entry of the pass's shipped `RenderSettings`, a
+    /// `Graphics::EStencilOp`). [`PreDraw`](crate::graphics_engine::render_pass::RenderPass::PreDraw) applies the pass's stencil state
+    /// ([`SetStencilOp`](crate::graphics_engine::draw::SetStencilOp) and siblings) when
+    /// [`m_StencilTestEnable`](crate::graphics_engine::render_pass::RenderPass::m_StencilTestEnable) is enabled, and copies these settings into
+    /// the render context's stencil settings either way.
+    pub m_StencilOpZFail: u32,
+    /// The stencil depth-pass operation (a `RenderSettings` entry).
+    pub m_StencilOpZPass: u32,
+    /// The stencil fail operation (a `RenderSettings` entry).
+    pub m_StencilOpSFail: u32,
+    /// The stencil comparison function (a `RenderSettings` entry, a `Graphics::EStencilFunc`).
+    pub m_StencilFunc: u32,
+    /// The stencil read mask (a `RenderSettings` entry).
+    pub m_StencilMask: u32,
+    /// The stencil write mask (a `RenderSettings` entry).
+    pub m_StencilWriteMask: u32,
+    /// The stencil reference value (a `RenderSettings` entry).
+    pub m_StencilRef: u32,
+    /// Whether the pass stencil-tests (a `RenderSettings` entry). The per-pass settings
+    /// are shipped data; the engine also clears it in code for a few passes (the depth downsample
+    /// and the outline blur).
+    pub m_StencilTestEnable: u32,
+    _field_78: [u8; 22],
     /// Pass state flags. [`m_Enabled`](crate::graphics_engine::render_pass::RenderPassState::m_Enabled) gates whether the pass draws;
     /// [`ShadowManager::CommitRenderPassSettings`](crate::graphics_engine::shadow_manager::ShadowManager::CommitRenderPassSettings)
     /// drives it per dispatch for the shadow passes.
@@ -475,11 +498,13 @@ pub struct RenderPass {
     pub m_NumDepthBuckets: u16,
     _field_87e: [u8; 2],
     /// The depth-bucket boundary table for `FrontToBackBucketed` sorting: ascending *squared*
-    /// minimum distances, one per bucket, up to 16. An instance's bucket is the first entry its
+    /// minimum distances, one per bucket. An instance's bucket is the first entry its
     /// squared camera distance is below. Boundaries are registered at pass creation by squaring
     /// the boundary distance, appending it, and re-sorting the live prefix (the engine's
-    /// `AddDepthBucket`, inlined into `CRenderEngine::InitializeSystem` in the release build); the
-    /// only stock user is the Z-and-velocity pass, with boundaries at 40 and 120 metres.
+    /// `AddDepthBucket`, inlined into `CRenderEngine::InitializeSystem`); the
+    /// only stock user is the Z-and-velocity pass, with boundaries
+    /// [`Z_AND_VELOCITY_DEPTH_SQ_NEAR`](crate::graphics_engine::render_pass::RenderPass::Z_AND_VELOCITY_DEPTH_SQ_NEAR) and
+    /// [`Z_AND_VELOCITY_DEPTH_SQ_FAR`](crate::graphics_engine::render_pass::RenderPass::Z_AND_VELOCITY_DEPTH_SQ_FAR).
     pub m_DepthSqTable: [f32; 16],
 }
 fn _RenderPass_size_check() {
@@ -509,6 +534,34 @@ impl RenderPass {
             f(a1, count, a3, items)
         }
     }
+    pub const SetupRenderContext_ADDRESS: usize = 0x140174060;
+    /// Stamps the per-pass render-context state (`CRenderPass::SetupRenderContext`, static): the
+    /// [`RenderStatus`](crate::graphics_engine::render_pass::RenderStatus) shadow and reflection bits from the render engine's `m_IsRendering*` flags, the
+    /// render camera's world position
+    /// ([`m_RenderCameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderCameraPosition)),
+    /// the frame counter and its ring slots
+    /// ([`m_RenderFrameNo`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderFrameNo),
+    /// [`m_RenderFrameIndex`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderFrameIndex),
+    /// [`m_PreviousRenderFrameIndex`](crate::graphics_engine::graphics_engine::RenderContext::m_PreviousRenderFrameIndex)),
+    /// the active light counts, global light and sun vectors, the display size, the time of day and
+    /// its light modulator, the underwater flag, the weather scalars, and the active pass id
+    /// (`pass` may be null, giving `RP_NONE`). It finishes with
+    /// `CRenderEngine::UpdateRenderContextGlobals`, which copies the global constant buffers,
+    /// scene copies, reflection textures, and the light manager's per-frame resources.
+    pub unsafe fn SetupRenderContext(
+        ctx: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        pass: *mut crate::graphics_engine::render_pass::RenderPass,
+        context: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                pass: *mut crate::graphics_engine::render_pass::RenderPass,
+                context: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            ) = ::std::mem::transmute(Self::SetupRenderContext_ADDRESS);
+            f(ctx, pass, context)
+        }
+    }
     pub const SetRenderContextCamera_ADDRESS: usize = 0x140187430;
     /// Fills the per-view render context from `camera` (the render camera, or a shadow or reflective
     /// light camera selected by the pass flags): the view, projection, and translation-free offset
@@ -530,6 +583,7 @@ impl RenderPass {
     /// The per-pass half of the list rotation, driven by the per-frame `CKeep1000Frames` call in the
     /// `CGraphicsEngine::Draw` prologue: points `m_CurrentAddList` at the new parity's list, the draw
     /// list at the other, and zeroes the new add-list's element count. Also snapshots the pass camera.
+    /// It is an entry of the pass vtable.
     pub unsafe fn SaveRenderFrameData(&mut self, parity: u32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, parity: u32) = ::std::mem::transmute(
@@ -539,7 +593,7 @@ impl RenderPass {
         }
     }
     pub const Draw_ADDRESS: usize = 0x140194540;
-    /// The virtual per-pass draw entry (vtable slot 0): when the pass has work, it runs
+    /// The virtual per-pass draw entry (the first entry of the pass vtable): when the pass has work, it runs
     /// `SetupRenderContext`, selects the pass camera (the pass's external camera if set, else the
     /// render camera) into the context via
     /// [`SetRenderContextCamera`](crate::graphics_engine::render_pass::RenderPass::SetRenderContextCamera), refreshes and uploads the
@@ -548,7 +602,8 @@ impl RenderPass {
     /// then
     /// [`SetAllGlobalShaderProgramConstants`](crate::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants),
     /// under the `"SetGlobals"` marker), binds the pass's render setup and the global textures,
-    /// and vtable-dispatches the pass body (slots 1 and 2).
+    /// and vtable-dispatches the pass body ([`PreDraw`](crate::graphics_engine::render_pass::RenderPass::PreDraw) and
+    /// [`DoDraw`](crate::graphics_engine::render_pass::RenderPass::DoDraw)).
     pub unsafe fn Draw(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -557,13 +612,30 @@ impl RenderPass {
             f(self as *mut Self as _)
         }
     }
+    pub const PreDraw_ADDRESS: usize = 0x140186DB0;
+    /// The per-pass pre-draw (a pass vtable entry): resolves the back buffer and depth buffer when the pass
+    /// asks for them, binds the pass's render setup, applies its stencil state (see
+    /// [`m_StencilTestEnable`](crate::graphics_engine::render_pass::RenderPass::m_StencilTestEnable)) and depth bias, and issues the pass's
+    /// colour, depth, and stencil clears ([`ClearFlags`](crate::graphics_engine::draw::ClearFlags)).
+    pub unsafe fn PreDraw(
+        &mut self,
+        ctx: *mut crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ctx: *mut crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::PreDraw_ADDRESS);
+            f(self as *mut Self as _, ctx)
+        }
+    }
     pub const DoDraw_ADDRESS: usize = 0x1401AC7A0;
     /// Draws the current draw list, walking `min(m_ListSize, m_NumElements)` blocks and
     /// vtable-dispatching each. Non-destructive -- never writes `m_NumElements`. Calls
     /// [`SortList`](crate::graphics_engine::render_pass::RenderPass::SortList) lazily before drawing. Consecutive blocks of one type
     /// form a type run: [`ChangeRenderBlockType`](crate::graphics_engine::render_pass::RenderPass::ChangeRenderBlockType) switches
     /// between runs, and the tail closes the final run (its type-level restore and its scope
-    /// marker).
+    /// marker). It follows `Draw` and `PreDraw` in the pass vtable.
     pub unsafe fn DoDraw(
         &mut self,
         ctx: *mut crate::graphics_engine::graphics_engine::RenderContext,
@@ -629,6 +701,14 @@ impl RenderPass {
         }
     }
 }
+impl RenderPass {
+    /// The second squared depth-bucket boundary (in square metres) registered on the Z-and-velocity
+    /// pass.
+    pub const Z_AND_VELOCITY_DEPTH_SQ_FAR: f32 = 14400.0;
+    /// The first squared depth-bucket boundary (in square metres) `CRenderEngine::InitializeSystem`
+    /// registers on the Z-and-velocity pass in [`m_DepthSqTable`](crate::graphics_engine::render_pass::RenderPass::m_DepthSqTable).
+    pub const Z_AND_VELOCITY_DEPTH_SQ_NEAR: f32 = 1600.0;
+}
 impl std::convert::AsRef<RenderPass> for RenderPass {
     fn as_ref(&self) -> &RenderPass {
         self
@@ -676,6 +756,36 @@ crate::__bitflags! {
 fn _RenderPassState_size_check() {
     unsafe {
         ::std::mem::transmute::<[u8; 0x2], RenderPassState>([0u8; 0x2]);
+    }
+    unreachable!()
+}
+crate::__bitflags! {
+    #[doc =
+    " The render-status bits of [`RenderContext::m_RenderStatus`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderStatus)"]
+    #[doc =
+    " (`RenderContext::ERenderStatus`), which tell render blocks what kind of pass is drawing so they"]
+    #[doc =
+    " can select depth, shadow, or reflection shader permutations. [`SetupRenderContext`](crate::graphics_engine::render_pass::RenderPass::SetupRenderContext) clears and sets"]
+    #[doc =
+    " [`RENDERSTATUS_STATIC_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_STATIC_SHADOWMAP),"]
+    #[doc =
+    " [`RENDERSTATUS_DYNAMIC_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_DYNAMIC_SHADOWMAP),"]
+    #[doc =
+    " [`RENDERSTATUS_REFLECTIONS`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_REFLECTIONS), and"]
+    #[doc =
+    " [`RENDERSTATUS_RSM`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_RSM) with the values given here, and also clears"]
+    #[doc =
+    " [`RENDERSTATUS_MIRROR`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_MIRROR). The other values are unconfirmed."]
+    pub struct RenderStatus : u32 { const RENDERSTATUS_DEFAULT = 1usize as _; const
+    RENDERSTATUS_STATIC_SHADOWMAP = 2usize as _; const RENDERSTATUS_DYNAMIC_SHADOWMAP =
+    4usize as _; const RENDERSTATUS_REFLECTIONS = 8usize as _; const RENDERSTATUS_TILING
+    = 16usize as _; const RENDERSTATUS_MIRROR = 32usize as _; const RENDERSTATUS_RSM =
+    64usize as _; const RENDERSTATUS_BILLBOARD_ARRAY = 128usize as _; const
+    RENDERSTATUS_SHADOWMAP = 6usize as _; }
+}
+fn _RenderStatus_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], RenderStatus>([0u8; 0x4]);
     }
     unreachable!()
 }
@@ -736,5 +846,26 @@ pub unsafe fn CalculateOffsetViewProjectionMatrix(
             dst: *mut crate::types::math::Matrix4,
         ) = ::std::mem::transmute(CalculateOffsetViewProjectionMatrix_ADDRESS);
         f(src, proj, dst)
+    }
+}
+pub const CalculateOffsetWorldViewProjectionMatrix_ADDRESS: usize = 0x140136070;
+/// Copies the world matrix `world` into `dst`, makes its translation row relative to
+/// [`RenderContext::m_CameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_CameraPosition)
+/// (with `w = 1`), and multiplies it by
+/// [`RenderContext::m_OffsetViewProjection`](crate::graphics_engine::graphics_engine::RenderContext::m_OffsetViewProjection):
+/// the camera-relative world-view-projection the render blocks bake into their constant buffers
+/// (`CRenderBlock::CalculateOffsetWorldViewProjectionMatrix`). Static.
+pub unsafe fn CalculateOffsetWorldViewProjectionMatrix(
+    ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+    world: *const crate::types::math::Matrix4,
+    dst: *mut crate::types::math::Matrix4,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+            world: *const crate::types::math::Matrix4,
+            dst: *mut crate::types::math::Matrix4,
+        ) = ::std::mem::transmute(CalculateOffsetWorldViewProjectionMatrix_ADDRESS);
+        f(ctx, world, dst)
     }
 }

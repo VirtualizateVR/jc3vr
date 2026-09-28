@@ -456,12 +456,11 @@ pub struct StereoConfig {
     /// from the second. A crude test of whether the AO asymmetry is the artifact (a real shared-AO fix
     /// needs reprojection, not omission).
     pub ssao_eye0_only: bool,
-    /// Diagnostic: restore the `RenderEngine` per-Draw constant-buffer ring index (`m_ConstantBufferRingIndex`) between
-    /// the two stereo eyes. This ring advances once per `Draw` and is *not* one of the engine frame
-    /// counters [`restore_frame_counters`](Self::restore_frame_counters) rewinds, so the two eyes
-    /// otherwise land on different constant-buffer pool slots -- any pass that reads the previous slot
-    /// (reprojection / previous-frame matrices) then sees different data per eye. Test whether pinning
-    /// it converges the per-eye MainColor.
+    /// Diagnostic: restore the `RenderEngine` back-buffer copy ring index (`m_CurrBackBufferCopy`)
+    /// between the two stereo eyes. This ring advances once per `Draw` and is *not* one of the engine
+    /// frame counters [`restore_frame_counters`](Self::restore_frame_counters) rewinds, so the two eyes
+    /// otherwise land on different back-buffer copies -- any pass that reads the previous copy then
+    /// sees different data per eye. Test whether pinning it converges the per-eye MainColor.
     pub restore_cb_ring: bool,
     /// Diagnostic: skip the screen-space reflections pass (`RP_SCREEN_SPACE_REFLECTIONS`) on both eyes.
     /// SSR reads a previous-frame scene-color capture that is regenerated every `Draw`, so eye 1 reads

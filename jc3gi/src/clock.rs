@@ -14,9 +14,22 @@ pub struct Clock {
     pub m_Stop: bool,
     pub m_ForceToFps: bool,
     _field_2e: [u8; 2],
-    pub m_Time: u64,
-    pub m_RealTimeAtUpdateGame: u64,
-    pub m_PauseTimeAtUpdateGame: u64,
+    /// Real elapsed milliseconds, advanced by every [`Update`](crate::clock::Clock::Update) regardless of pause.
+    pub m_Time: u32,
+    /// Real elapsed milliseconds as of the last [`Update`](crate::clock::Clock::Update), advanced regardless of
+    /// pause.
+    pub m_RealTimeAtUpdate: u32,
+    /// The game-side counterpart of [`m_RealTimeAtUpdate`](crate::clock::Clock::m_RealTimeAtUpdate).
+    pub m_RealTimeAtUpdateGame: u32,
+    /// The value of [`m_RealTimeAtUpdate`](crate::clock::Clock::m_RealTimeAtUpdate) latched when the clock
+    /// enters pause; `GetRealTimeAtUpdate` returns it instead while paused.
+    pub m_PauseTimeAtUpdate: u32,
+    /// The value of [`m_RealTimeAtUpdateGame`](crate::clock::Clock::m_RealTimeAtUpdateGame) latched when the
+    /// clock enters pause.
+    pub m_PauseTimeAtUpdateGame: u32,
+    /// Elapsed milliseconds that advance only while the clock is not stopped; `GetTime` returns it
+    /// unless asked to ignore pause.
+    pub m_PauseTime: u32,
     pub m_GameTimeMicro: u64,
     pub m_GameRunTimeMicro: u64,
     pub m_ElapsedTime: u64,
@@ -39,6 +52,8 @@ impl Clock {
 }
 impl Clock {
     pub const GetSPF_ADDRESS: usize = 0x140091C10;
+    /// Returns [`PAUSED_SPF`](crate::clock::Clock::PAUSED_SPF) while stopped (unless `ignore_pause`), the forced
+    /// SPF when forcing a frame rate, and `m_SPF` otherwise.
     pub unsafe fn GetSPF(&self, ignore_pause: bool) -> f32 {
         unsafe {
             let f: unsafe extern "system" fn(
@@ -49,6 +64,8 @@ impl Clock {
         }
     }
     pub const Pause_ADDRESS: usize = 0x140091BB0;
+    /// Sets `m_Stop`; on the transition into pause, latches the real-time-at-update counters into
+    /// their pause-time counterparts.
     pub unsafe fn Pause(&mut self, pause: bool) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, pause: bool) = ::std::mem::transmute(
@@ -96,6 +113,11 @@ impl Clock {
             f(self as *mut Self as _)
         }
     }
+}
+impl Clock {
+    /// The seconds-per-frame value [`GetSPF`](crate::clock::Clock::GetSPF) returns while the clock is stopped and
+    /// `ignore_pause` is false.
+    pub const PAUSED_SPF: f32 = 0.000001;
 }
 impl std::convert::AsRef<Clock> for Clock {
     fn as_ref(&self) -> &Clock {

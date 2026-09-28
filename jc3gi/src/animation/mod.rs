@@ -1,4 +1,6 @@
 #![cfg_attr(any(), rustfmt::skip)]
+pub mod arm_aim_ik;
 pub mod ik;
+pub mod pose_producer;
 pub mod rule_system;
 pub mod symbol_table;

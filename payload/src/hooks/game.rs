@@ -556,13 +556,13 @@ pub(crate) unsafe fn drain_draw_thread_fragment(ge: &mut GraphicsEngine) {
 }
 
 fn snapshot_cb_ring() -> Option<u32> {
-    unsafe { Some(RenderEngine::get()?.m_ConstantBufferRingIndex) }
+    unsafe { Some(RenderEngine::get()?.m_CurrBackBufferCopy) }
 }
 
 fn restore_cb_ring_index(saved: u32) {
     unsafe {
         if let Some(re) = RenderEngine::get() {
-            re.m_ConstantBufferRingIndex = saved;
+            re.m_CurrBackBufferCopy = saved;
         }
     }
 }

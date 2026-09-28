@@ -1,2 +1,6 @@
 #![cfg_attr(any(), rustfmt::skip)]
+pub mod attached_effects;
+pub mod explosive;
 pub mod grappling_hook;
+pub mod weapon;
+pub mod wire_end;

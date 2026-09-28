@@ -345,3 +345,88 @@ pub unsafe fn GetParachuteSteeringValues(
         )
     }
 }
+pub const UpdateParachutingTransforms_ADDRESS: usize = 0x140792880;
+/// Slerps the character and canopy proxy orientations in the parachute action params toward the
+/// wanted orientation. Called from [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics).
+pub unsafe fn UpdateParachutingTransforms(
+    character: *mut crate::character::character::Character,
+    params: *mut crate::input::parachute::ParachuteActionParams,
+    wanted_yaw_pitch_roll: *const crate::types::math::Vector3,
+    transform: *const crate::types::math::Matrix4,
+    para_settings: *const crate::input::parachute::CharacterParachuteSettings,
+    dt: f32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            character: *mut crate::character::character::Character,
+            params: *mut crate::input::parachute::ParachuteActionParams,
+            wanted_yaw_pitch_roll: *const crate::types::math::Vector3,
+            transform: *const crate::types::math::Matrix4,
+            para_settings: *const crate::input::parachute::CharacterParachuteSettings,
+            dt: f32,
+        ) = ::std::mem::transmute(UpdateParachutingTransforms_ADDRESS);
+        f(character, params, wanted_yaw_pitch_roll, transform, para_settings, dt)
+    }
+}
+pub const ApplyConventionalParachuteVelocities_ADDRESS: usize = 0x140792D10;
+/// Computes the conventional (physics-driven) parachute velocity from the steering values, the
+/// orientation, and the current velocity. Called from [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics).
+pub unsafe fn ApplyConventionalParachuteVelocities(
+    character: *mut crate::character::character::Character,
+    dt: f32,
+    para_settings: *const crate::input::parachute::CharacterParachuteSettings,
+    transform: *const crate::types::math::Matrix4,
+    blend: f32,
+    steering_values: *const crate::types::math::Vector3,
+    p6: *const crate::types::math::Vector3,
+    p7: *const crate::types::math::Vector3,
+    velocity_out: *mut crate::types::math::Vector3,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            character: *mut crate::character::character::Character,
+            dt: f32,
+            para_settings: *const crate::input::parachute::CharacterParachuteSettings,
+            transform: *const crate::types::math::Matrix4,
+            blend: f32,
+            steering_values: *const crate::types::math::Vector3,
+            p6: *const crate::types::math::Vector3,
+            p7: *const crate::types::math::Vector3,
+            velocity_out: *mut crate::types::math::Vector3,
+        ) = ::std::mem::transmute(ApplyConventionalParachuteVelocities_ADDRESS);
+        f(
+            character,
+            dt,
+            para_settings,
+            transform,
+            blend,
+            steering_values,
+            p6,
+            p7,
+            velocity_out,
+        )
+    }
+}
+pub const ApplyAnimationVelocityWithSteering_ADDRESS: usize = 0x1407751E0;
+/// Computes the parachute velocity from the animation root velocity with steering applied. Called
+/// from [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics).
+pub unsafe fn ApplyAnimationVelocityWithSteering(
+    character: *mut crate::character::character::Character,
+    dt: f32,
+    para_settings: *const crate::input::parachute::CharacterParachuteSettings,
+    transform: *const crate::types::math::Matrix4,
+    blend: f32,
+    velocity_out: *mut crate::types::math::Vector3,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            character: *mut crate::character::character::Character,
+            dt: f32,
+            para_settings: *const crate::input::parachute::CharacterParachuteSettings,
+            transform: *const crate::types::math::Matrix4,
+            blend: f32,
+            velocity_out: *mut crate::types::math::Vector3,
+        ) = ::std::mem::transmute(ApplyAnimationVelocityWithSteering_ADDRESS);
+        f(character, dt, para_settings, transform, blend, velocity_out)
+    }
+}

@@ -25,6 +25,87 @@ impl GameWorld {
     pub fn vftable(&self) -> *const crate::game_world::GameWorldVftable {
         self.vftable as *const crate::game_world::GameWorldVftable
     }
+    pub const TeleportPlayerImpl_ADDRESS: usize = 0x1409AF820;
+    /// `CGameWorld::TeleportPlayer`, the implementation behind the
+    /// [`TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer) virtual: copies the request into
+    /// the world's teleport state and arms the `TELEPORT_*` state machine
+    /// [`UpdateTeleport`](crate::game_world::UpdateTeleport) services; starts the overlay fade-to-black when `use_fade` is set and
+    /// [`TELEPORT_FLAG_NO_FADE`](crate::game_world::GameWorld::TELEPORT_FLAG_NO_FADE) is clear.
+    pub unsafe fn TeleportPlayerImpl(
+        &mut self,
+        world: *const crate::types::math::Matrix4,
+        state: *const crate::hash::HashString,
+        use_load_state: bool,
+        use_fade: bool,
+        fade_in_time: f32,
+        fade_out_time: f32,
+        flags: u32,
+        teleport_done_event: *mut u8,
+        use_load_screen: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world: *const crate::types::math::Matrix4,
+                state: *const crate::hash::HashString,
+                use_load_state: bool,
+                use_fade: bool,
+                fade_in_time: f32,
+                fade_out_time: f32,
+                flags: u32,
+                teleport_done_event: *mut u8,
+                use_load_screen: bool,
+            ) = ::std::mem::transmute(Self::TeleportPlayerImpl_ADDRESS);
+            f(
+                self as *mut Self as _,
+                world,
+                state,
+                use_load_state,
+                use_fade,
+                fade_in_time,
+                fade_out_time,
+                flags,
+                teleport_done_event,
+                use_load_screen,
+            )
+        }
+    }
+    pub const TeleportPlayerInstantImpl_ADDRESS: usize = 0x140A126C0;
+    /// `CGameWorld::TeleportPlayerInstant`, the implementation behind the
+    /// [`TeleportPlayerInstant`](crate::game_world::GameWorld::TeleportPlayerInstant) virtual. Writes the
+    /// character's transform through its world-transform virtual, calls
+    /// `CCharacter::ForceNeutralState`, sets the character's teleported flag bit, and resets the
+    /// camera through [`GameCameraManager::ResetCamera`](crate::camera::game_camera_manager::GameCameraManager::ResetCamera),
+    /// bracketed by the `game_teleporting_initiated` and `game_teleporting_completed` posted
+    /// events.
+    pub unsafe fn TeleportPlayerInstantImpl(
+        &mut self,
+        world: *const crate::types::math::Matrix4,
+        state: *const crate::hash::HashString,
+        flags: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world: *const crate::types::math::Matrix4,
+                state: *const crate::hash::HashString,
+                flags: u32,
+            ) = ::std::mem::transmute(Self::TeleportPlayerInstantImpl_ADDRESS);
+            f(self as *mut Self as _, world, state, flags)
+        }
+    }
+    pub const IsTeleportingImpl_ADDRESS: usize = 0x1409AF810;
+    /// `CGameWorld::IsTeleporting`, the implementation behind the
+    /// [`IsTeleporting`](crate::game_world::GameWorld::IsTeleporting) virtual: whether the teleport state
+    /// machine is not idle.
+    pub unsafe fn IsTeleportingImpl(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsTeleportingImpl_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     /// Queues a deferred player teleport that `CGameWorld::UpdateTeleport` services over the
     /// following frames through its `TELEPORT_*` state machine. `world` is the destination
     /// transform (the translation row places the character; the rotation sets the facing and
@@ -95,10 +176,14 @@ impl GameWorld {
     }
 }
 impl GameWorld {
-    /// Bit `0x1` of the teleport `flags`: keep the active mission running across the teleport.
+    /// A teleport `flags` bit: keep the active mission running across the teleport.
     /// Without it the mission manager aborts the active mission as part of the teleport.
     pub const TELEPORT_FLAG_KEEP_MISSION: u32 = 1;
-    /// Bit `0x2` of the teleport `flags` (deferred teleports only): skip the fade-to-black even
+    /// A teleport `flags` bit that [`Teleport::Teleport`](crate::game_world::Teleport::Teleport) adds when the teleport object's
+    /// [`m_LeavePlayerDisabled`](crate::game_world::TeleportFlags::m_LeavePlayerDisabled) flag is set. Its effect in
+    /// the teleport has not been traced.
+    pub const TELEPORT_FLAG_LEAVE_PLAYER_DISABLED: u32 = 4;
+    /// A teleport `flags` bit (deferred teleports only): skip the fade-to-black even
     /// when `use_fade` is set.
     pub const TELEPORT_FLAG_NO_FADE: u32 = 2;
 }
@@ -193,5 +278,100 @@ impl std::convert::AsRef<GameWorldVftable> for GameWorldVftable {
 impl std::convert::AsMut<GameWorldVftable> for GameWorldVftable {
     fn as_mut(&mut self) -> &mut GameWorldVftable {
         self
+    }
+}
+#[repr(C, align(8))]
+/// `CTeleport`: a placed game object that teleports the player to its own transform when
+/// triggered by its teleport event, through [`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer). Only the fields
+/// [`Teleport`](crate::game_world::Teleport::Teleport) reads are mapped.
+pub struct Teleport {
+    _field_0: [u8; 200],
+    /// The object's local transform.
+    pub m_LocalTransform: crate::types::math::Matrix4,
+    /// The object's world transform: the teleport destination.
+    pub m_WorldMatrix: crate::types::math::Matrix4,
+    /// The optional object whose arrival state is checked before teleporting.
+    pub m_TeleportObjectId: u64,
+    pub m_FadeInTime: f32,
+    pub m_FadeOutTime: f32,
+    /// The character state to enter on arrival.
+    pub m_State: crate::hash::HashString,
+    /// The packed flags.
+    pub m_Flags: crate::game_world::TeleportFlags,
+    _field_15d: [u8; 3],
+}
+fn _Teleport_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x160], Teleport>([0u8; 0x160]);
+    }
+    unreachable!()
+}
+impl Teleport {
+    pub const SetTransform_ADDRESS: usize = 0x1404CECE0;
+    /// `CTeleport::SetTransform`: copies `world_matrix` into
+    /// [`m_WorldMatrix`](crate::game_world::Teleport::m_WorldMatrix).
+    pub unsafe fn SetTransform(
+        &mut self,
+        world_matrix: *const crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world_matrix: *const crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::SetTransform_ADDRESS);
+            f(self as *mut Self as _, world_matrix)
+        }
+    }
+    pub const Teleport_ADDRESS: usize = 0x14050E360;
+    /// `CTeleport::Teleport`: issues [`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer) to
+    /// [`m_WorldMatrix`](crate::game_world::Teleport::m_WorldMatrix) with the object's state, fade times, and flags, posts
+    /// the teleport message, and clears the pending-teleport bit
+    /// ([`m_Teleport`](crate::game_world::TeleportFlags::m_Teleport)). Called from
+    /// `CTeleport::UpdatePreSim` when a teleport is pending.
+    pub unsafe fn Teleport(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Teleport_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<Teleport> for Teleport {
+    fn as_ref(&self) -> &Teleport {
+        self
+    }
+}
+impl std::convert::AsMut<Teleport> for Teleport {
+    fn as_mut(&mut self) -> &mut Teleport {
+        self
+    }
+}
+crate::__bitflags! {
+    #[doc =
+    " The packed flag bits of [`Teleport::m_Flags`](crate::game_world::Teleport::m_Flags) (`CTeleport`'s bitfield members, from the low bit"]
+    #[doc = " upward)."] pub struct TeleportFlags : u8 { const m_Enabled = 1usize as _;
+    const m_ForceInstant = 2usize as _; const m_Teleport = 4usize as _; const m_UseFade =
+    8usize as _; const m_IgnoreFade = 16usize as _; const m_LeavePlayerDisabled = 32usize
+    as _; const m_bUseLoadingScreen = 64usize as _; }
+}
+fn _TeleportFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], TeleportFlags>([0u8; 0x1]);
+    }
+    unreachable!()
+}
+pub const UpdateTeleport_ADDRESS: usize = 0x140A128A0;
+/// `CGameWorld::UpdateTeleport`: advances the deferred-teleport state machine a
+/// [`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer) request armed (fade, optional load state, character placement,
+/// fade back in). Called from `CGameWorld::UpdatePostSim` each sim tick. `game_world` is the full
+/// `CGameWorld` object, which embeds the [`GameWorld`](crate::game_world::GameWorld) interface subobject (the singleton) after
+/// its own leading members, so the singleton pointer is not the start of the object.
+pub unsafe fn UpdateTeleport(game_world: *mut u8, dt: f32) {
+    unsafe {
+        let f: unsafe extern "system" fn(game_world: *mut u8, dt: f32) = ::std::mem::transmute(
+            UpdateTeleport_ADDRESS,
+        );
+        f(game_world, dt)
     }
 }

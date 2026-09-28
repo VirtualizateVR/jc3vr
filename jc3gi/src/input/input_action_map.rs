@@ -1,9 +1,8 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
-/// An action ID, indexing [`action_name_table`](get_action_name_table). The numbering is fixed at build time, so action IDs
-/// can be hardcoded. The engine takes a raw int, and this enum is int-repr, so it converts cleanly
-/// into the action parameters.
+/// An action ID, indexing [`action_name_table`](get_action_name_table). The numbering is fixed at build time. The engine
+/// passes action IDs as plain integers.
 pub enum Action {
     PAUSE = 0isize as _,
     LOOK_UP = 1isize as _,
@@ -267,6 +266,11 @@ fn _Action_size_check() {
     }
     unreachable!()
 }
+impl Action {
+    /// The number of action ids: the length of [`action_name_table`], and the action value
+    /// meaning "no action" in the button-mapping table.
+    pub const COUNT: i32 = 255;
+}
 #[repr(u32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// The digital state of an [`InputDeviceEffector`](crate::input::input_action_map::InputDeviceEffector).
@@ -321,8 +325,7 @@ impl std::convert::AsMut<InputActionMap> for InputActionMap {
 /// linked-list node whose extra id / next fields follow this struct; reading the effector itself uses
 /// only these fields.
 ///
-/// **Provenance:** the layout is from the debug PDB, cross-checked against retail usage (`m_Value`,
-/// `m_State`, and `m_StateTime` offsets all match).
+/// The `m_Value`, `m_State`, and `m_StateTime` offsets are confirmed against their uses.
 pub struct InputDeviceEffector {
     /// The analog value, e.g. trigger pressure or stick axis. [`Click`](crate::input::input_action_map::InputDeviceEffector::Click)
     /// sets it to `1.0`.
@@ -412,8 +415,8 @@ impl LocalPlayerActionMap {
     /// The single-argument `CInputActionMap::GetActionEffector(int)` overload the wrapper's own
     /// setters use: resolves an action to its effector without a device index. The singleton
     /// pointer is the underlying `CInputActionMap` itself (established from `ForceSetPressed`,
-    /// which passes it straight to the map's effector lookup), so the read-side lookup is exposed
-    /// here. Returns the shared null-effector sentinel for invalid ids; callers null-check anyway.
+    /// which passes it straight to the map's effector lookup). Returns the shared null-effector
+    /// sentinel for invalid ids.
     pub unsafe fn GetActionEffector(
         &mut self,
         action: crate::input::input_action_map::Action,
@@ -469,6 +472,8 @@ impl std::convert::AsMut<LocalPlayerActionMap> for LocalPlayerActionMap {
         self
     }
 }
-pub unsafe fn get_action_name_table() -> &'static mut *const u8 {
-    unsafe { &mut *(0x142D99370 as *mut *const u8) }
+/// The action-name table: [`Action::COUNT`](crate::input::input_action_map::Action::COUNT) name-string pointers indexed by action id, iterated
+/// by the `CSteeringUtil` action/string map constructors.
+pub unsafe fn get_action_name_table() -> &'static mut [*const u8; 255] {
+    unsafe { &mut *(0x142D99370 as *mut [*const u8; 255]) }
 }

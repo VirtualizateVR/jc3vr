@@ -21,7 +21,7 @@ pub struct ObjectBlackboard {
     /// The lock guarding every accessor (`SThreadMutex`, a one-pointer wrapper; the accessors
     /// enter the critical section directly).
     pub m_BbLock: *mut crate::graphics_engine::device::CRITICAL_SECTION,
-    /// The dev dump cursor ("first line to dump"); unreferenced by the shipped code.
+    /// The dev dump cursor ("first line to dump"); unreferenced by the game code.
     pub m_FirstLineToDump: i32,
     _field_2c: [u8; 4],
 }
@@ -64,13 +64,14 @@ impl ObjectBlackboard {
     pub const SetVector3_ADDRESS: usize = 0x1405C6A70;
     /// The `SetBlackboardValue<CVector3f>` template instantiation. `value` is by-value `CVector3f`
     /// at the C++ level, which the MSVC x64 ABI passes by reference — hence the pointer here.
-    /// `flags` is `1` at every observed call site; `name` is an optional debug label, null in
-    /// release calls.
+    /// `persistence` is recorded when the call creates the key, and is
+    /// [`PERSISTENCE_LOCAL_FRAME`](crate::blackboard::PersistenceType::PERSISTENCE_LOCAL_FRAME) at every observed
+    /// call site; `name` is an optional debug label, null in every observed call.
     pub unsafe fn SetVector3(
         &mut self,
         id: u32,
         value: *const crate::types::math::Vector3,
-        flags: u32,
+        persistence: crate::blackboard::PersistenceType,
         name: *const u8,
     ) -> bool {
         unsafe {
@@ -78,14 +79,22 @@ impl ObjectBlackboard {
                 this: *mut Self,
                 id: u32,
                 value: *const crate::types::math::Vector3,
-                flags: u32,
+                persistence: crate::blackboard::PersistenceType,
                 name: *const u8,
             ) -> bool = ::std::mem::transmute(Self::SetVector3_ADDRESS);
-            f(self as *mut Self as _, id, value, flags, name)
+            f(self as *mut Self as _, id, value, persistence, name)
         }
     }
 }
 impl ObjectBlackboard {
+    /// The id of the float master weight (clamped to 0-1) of the player's per-arm aim IK, read by
+    /// `NRightArmAimIK::Update` and `NReelInAimIK::Update` (the IK is skipped while it is zero). The
+    /// animation data writes it, not the aim logic.
+    pub const AIM_IK_WEIGHT_ID: u32 = 3893557566;
+    /// The id of a float marker (written as `1.0` by the stunt set-target-direction task) whose
+    /// presence makes `NStateTask_LocoUtil::EvaluateCharacterDisplacement` skip the animation
+    /// root-motion branch and apply the [`MOVE_DIR_ID`](crate::blackboard::ObjectBlackboard::MOVE_DIR_ID) direction instantly.
+    pub const APPLY_TARGET_DIR_INSTANTLY_ID: u32 = 3896772124;
     /// The id of the second float the input move task reads alongside
     /// [`SPEED_ID`](crate::blackboard::ObjectBlackboard::SPEED_ID); semantics unmapped, a candidate input-strength
     /// signal.
@@ -97,9 +106,18 @@ impl ObjectBlackboard {
     /// The id of the camera-relative world-space move direction (`CVector3f`), written each frame
     /// by `NStateTask_InputLocoSetTargetDirTask::SetupTargetDir`.
     pub const MOVE_DIR_ID: u32 = 2113030792;
+    /// The id of the previous target direction (`CVector3f`), written by
+    /// `NStateTask_InputLocoSetTargetDirTask::SetupTargetDir` and read by
+    /// `NStateTask_LocoUtil::EvaluateCharacterDisplacement` as the code-driven displacement
+    /// direction inside its special segments.
+    pub const PREVIOUS_TARGET_DIR_ID: u32 = 923417185;
     /// The id of the float speed value the input locomotion tasks branch on (`<= 0` routes into
     /// the stop acts).
     pub const SPEED_ID: u32 = 3396837917;
+    /// The id of the float that replaces the result of
+    /// [`EvaluateCharacterSpeed`](crate::input::locomotion::NStateTask_LocoUtil::EvaluateCharacterSpeed) when that function is
+    /// asked to use the blackboard override and the key is present.
+    pub const SPEED_OVERRIDE_ID: u32 = 1707123197;
     /// The id of the float turn angle (degrees) the swim input tasks write when they latch an
     /// animated turn: the XZ angle from the body forward to the desired direction, measured by
     /// `CControllerUtility::GetDeltaAngleFromOrientation` and stored alongside the
@@ -127,18 +145,15 @@ impl std::convert::AsMut<ObjectBlackboard> for ObjectBlackboard {
 pub struct ObjectBlackboardKeyInfo {
     /// The key hash the accessors look up by.
     pub m_KeyHash: u32,
-    /// The value's type tag (`SObjectBlackboardKeyInfo::EValueType`, stored narrow): `0` none,
-    /// `1` float, `2` vector, `3` u32, `4` i32, `5` hash (aliases to u32 on read), `6` u64,
-    /// `7` u8.
-    pub m_ValueType: u8,
+    /// The value's type tag.
+    pub m_ValueType: crate::blackboard::ValueType,
     _field_5: [u8; 3],
-    /// The persistence class (`SObjectBlackboardKeyInfo::EPersistenceType`): `0` session,
-    /// `1` local frame, `2` global frame.
-    pub m_PersistenceType: u32,
+    /// The persistence class.
+    pub m_PersistenceType: crate::blackboard::PersistenceType,
     /// The value's byte offset within [`ObjectBlackboard::m_Data`](crate::blackboard::ObjectBlackboard::m_Data).
     pub m_DataOffset: u16,
     _field_e: [u8; 2],
-    /// An optional debug label for the key; null at release call sites.
+    /// An optional debug label for the key; null at every call site.
     pub m_DebugName: *const u8,
 }
 fn _ObjectBlackboardKeyInfo_size_check() {
@@ -157,4 +172,40 @@ impl std::convert::AsMut<ObjectBlackboardKeyInfo> for ObjectBlackboardKeyInfo {
     fn as_mut(&mut self) -> &mut ObjectBlackboardKeyInfo {
         self
     }
+}
+#[repr(u32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// The persistence class of a blackboard key (`SObjectBlackboardKeyInfo::EPersistenceType`),
+/// recorded in [`ObjectBlackboardKeyInfo::m_PersistenceType`](crate::blackboard::ObjectBlackboardKeyInfo::m_PersistenceType) when the key is first written.
+pub enum PersistenceType {
+    PERSISTENCE_SESSION = 0isize as _,
+    PERSISTENCE_LOCAL_FRAME = 1isize as _,
+    PERSISTENCE_GLOBAL_FRAME = 2isize as _,
+}
+fn _PersistenceType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], PersistenceType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
+#[repr(u8)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
+/// The type tag of a blackboard value (`SObjectBlackboardKeyInfo::EValueType`), stored narrow in
+/// [`ObjectBlackboardKeyInfo::m_ValueType`](crate::blackboard::ObjectBlackboardKeyInfo::m_ValueType).
+pub enum ValueType {
+    VALUE_NONE = 0isize as _,
+    VALUE_FLOAT = 1isize as _,
+    VALUE_VECTOR = 2isize as _,
+    VALUE_UINT32 = 3isize as _,
+    VALUE_INT32 = 4isize as _,
+    VALUE_HASH = 5isize as _,
+    VALUE_UINT64 = 6isize as _,
+    VALUE_UINT8 = 7isize as _,
+    VALUE_NOF_TYPES = 8isize as _,
+}
+fn _ValueType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], ValueType>([0u8; 0x1]);
+    }
+    unreachable!()
 }

@@ -33,6 +33,7 @@ use jc3gi::{
             Matrix3x4, RBIInfo, RenderBlockCharacter, RenderBlockCharacterSkin,
             RenderBlockLightGlow, SkinBatch,
         },
+        render_pass::RenderStatus,
     },
     types::math::Matrix4,
 };
@@ -274,7 +275,10 @@ unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bo
         return false;
     };
     // Shadow passes draw everything: that is the whole point.
-    if rc_ref.m_RenderStatus & 6 != 0 {
+    if rc_ref
+        .m_RenderStatus
+        .intersects(RenderStatus::RENDERSTATUS_SHADOWMAP)
+    {
         return false;
     }
     let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
@@ -458,7 +462,7 @@ unsafe fn maybe_dump(
         return;
     };
     let mut matrix = Matrix4::default();
-    unsafe { info_ref.GetMatrix(&mut matrix, rc_ref.m_TransformIndex as i32) };
+    unsafe { info_ref.GetMatrix(&mut matrix, rc_ref.m_RenderFrameIndex as i32) };
     let translation = glam::Vec3::new(matrix.data[12], matrix.data[13], matrix.data[14]);
     let d0 = translation.distance(root_t0);
     let d1 = translation.distance(root_t1);
@@ -501,7 +505,7 @@ unsafe fn maybe_dump(
         target: "render_block_dump",
         "{class} block={block:#x} status={:#x} tidx={} pos=({:.2},{:.2},{:.2}) d0={d0:.2} d1={d1:.2} slot={slot} collapse={collapse:?}{lines}",
         rc_ref.m_RenderStatus,
-        rc_ref.m_TransformIndex,
+        rc_ref.m_RenderFrameIndex,
         translation.x,
         translation.y,
         translation.z,

@@ -83,6 +83,58 @@ impl std::convert::AsMut<SpawnBudgetEntry> for SpawnBudgetEntry {
 /// types.
 pub type SpawnCallback = *const u8;
 #[repr(C, align(8))]
+/// `CSpawnSystem::CSpawnFactoryImpl`: the factory that vets and performs individual spawns.
+pub struct SpawnFactoryImpl {}
+impl SpawnFactoryImpl {
+    pub const CheckInternal_ADDRESS: usize = 0x140F09430;
+    /// Vets a spawn of `resource` at `transform`: checks mission and encounter state, landscape
+    /// physics residency, world-position validity, the despawn rank, the camera-visibility gate
+    /// (a BFBC frustum test against the camera's box-frustum parameters), and a physics shape
+    /// overlap. Returns whether the spawn may proceed.
+    pub unsafe fn CheckInternal(
+        &mut self,
+        resource: *mut crate::spawn_system::SpawnResourceDef,
+        transform: *const crate::types::math::Matrix4,
+        priority: i16,
+        flags: u32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                resource: *mut crate::spawn_system::SpawnResourceDef,
+                transform: *const crate::types::math::Matrix4,
+                priority: i16,
+                flags: u32,
+            ) -> bool = ::std::mem::transmute(Self::CheckInternal_ADDRESS);
+            f(self as *mut Self as _, resource, transform, priority, flags)
+        }
+    }
+}
+impl std::convert::AsRef<SpawnFactoryImpl> for SpawnFactoryImpl {
+    fn as_ref(&self) -> &SpawnFactoryImpl {
+        self
+    }
+}
+impl std::convert::AsMut<SpawnFactoryImpl> for SpawnFactoryImpl {
+    fn as_mut(&mut self) -> &mut SpawnFactoryImpl {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// An opaque `CSpawnSystem::SResourceDef`: one spawnable resource's definition.
+pub struct SpawnResourceDef {}
+impl SpawnResourceDef {}
+impl std::convert::AsRef<SpawnResourceDef> for SpawnResourceDef {
+    fn as_ref(&self) -> &SpawnResourceDef {
+        self
+    }
+}
+impl std::convert::AsMut<SpawnResourceDef> for SpawnResourceDef {
+    fn as_mut(&mut self) -> &mut SpawnResourceDef {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The spawn system: manages streaming (de)spawn of dynamic objects around the player. Each
 /// frame, [`Update`](crate::spawn_system::SpawnSystem::Update) builds a BFBC cull frustum from the camera manager's active
 /// camera and uses it as a "don't (de)spawn while visible" gate in `CSpawnFactoryImpl::CheckInternal`, so

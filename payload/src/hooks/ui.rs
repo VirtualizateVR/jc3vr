@@ -173,7 +173,7 @@ fn log_pipeline_lag(movie: &MovieImpl, split_active: bool) {
 /// Render the partitioned HUD (each render root into its own layer texture, full rate) while the
 /// partition is live; otherwise pass through. Runs on the UI render worker (kicked by
 /// `StartRender`). See [`crate::hud::split::roots`].
-#[detour(address = UIManager::Render_ADDRESS)]
+#[detour(address = UIManager::RenderImpl_ADDRESS)]
 fn ui_render(this: *mut UIManager, context: *mut HContext_t) {
     let original = UI_RENDER.get().unwrap();
     if let Some(views) = crate::hud::split_inputs() {

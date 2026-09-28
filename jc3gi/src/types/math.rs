@@ -29,9 +29,6 @@ impl std::convert::AsMut<Matrix3> for Matrix3 {
 /// The 16 floats are four rows; a world or camera transform's rows are its basis vectors:
 /// `data[0..2]` is right (+X), `data[4..6]` is up (+Y), `data[8..10]` is the +Z basis (so forward is
 /// `-data[8..10]`), and `data[12..14]` is the translation. Right-handed, Y-up.
-///
-/// When converting to a column-major math library, transpose the data and place basis vectors as
-/// columns (right, up, -forward, translation).
 pub struct Matrix4 {
     pub data: [f32; 16],
 }
@@ -89,6 +86,28 @@ impl Matrix4 {
                 Self::PerspectiveFovInverse_ADDRESS,
             );
             f(self as *mut Self as _, fov, aspect, far, near)
+        }
+    }
+    pub const CreateOrientation_ADDRESS: usize = 0x14002E3F0;
+    /// Builds a look-at orientation into `self` (also returned): the direction is
+    /// `normalize(eye_pos - at_pos)`, and the basis is completed from `up_dir` by the private
+    /// `CMatrix4f::Orientate`, with `eye_pos` as the translation.
+    pub unsafe fn CreateOrientation(
+        &mut self,
+        eye_pos: *const crate::types::math::Vector3,
+        at_pos: *const crate::types::math::Vector3,
+        up_dir: *const crate::types::math::Vector3,
+    ) -> *mut crate::types::math::Matrix4 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                eye_pos: *const crate::types::math::Vector3,
+                at_pos: *const crate::types::math::Vector3,
+                up_dir: *const crate::types::math::Vector3,
+            ) -> *mut crate::types::math::Matrix4 = ::std::mem::transmute(
+                Self::CreateOrientation_ADDRESS,
+            );
+            f(self as *mut Self as _, eye_pos, at_pos, up_dir)
         }
     }
 }
@@ -202,7 +221,24 @@ fn _Vector3_size_check() {
     }
     unreachable!()
 }
-impl Vector3 {}
+impl Vector3 {
+    pub const Lerp_ADDRESS: usize = 0x140031ED0;
+    /// Linearly interpolates `self` toward `other` in place: `self += (other - self) * weight`.
+    pub unsafe fn Lerp(
+        &mut self,
+        weight: f32,
+        other: *const crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weight: f32,
+                other: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::Lerp_ADDRESS);
+            f(self as *mut Self as _, weight, other)
+        }
+    }
+}
 impl std::convert::AsRef<Vector3> for Vector3 {
     fn as_ref(&self) -> &Vector3 {
         self
@@ -234,6 +270,11 @@ impl std::convert::AsMut<Vector4> for Vector4 {
     fn as_mut(&mut self) -> &mut Vector4 {
         self
     }
+}
+/// The engine's world up axis, `(0, 1, 0)` (`CVector3f::UP`). `CRenderEngine::SetGlobalShaderConstants`
+/// clamps the staged sun direction's elevation against it.
+pub unsafe fn get_vector3_up() -> &'static mut crate::types::math::Vector3 {
+    unsafe { &mut *(0x142D39890 as *mut crate::types::math::Vector3) }
 }
 #[cfg(feature = "glam")]
 impl From<glam::Mat3> for Matrix3 {

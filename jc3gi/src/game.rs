@@ -11,12 +11,23 @@ pub struct Game {
     pub m_FilteredDrawTime: u64,
     _field_88: [u8; 12],
     pub m_RenderCount: u32,
+    /// The frame-pacing method [`Update`](crate::game::Game::Update) uses this frame, rechosen every frame:
+    /// [`INTERPOLATION_METHOD_ACCUMULATED`](crate::game::Game::INTERPOLATION_METHOD_ACCUMULATED) while a cutscene
+    /// plays, [`INTERPOLATION_METHOD_SINGLE_STEP`](crate::game::Game::INTERPOLATION_METHOD_SINGLE_STEP) otherwise,
+    /// or [`m_InterpolationOverride`](crate::game::Game::m_InterpolationOverride) when that is non-negative.
     pub m_InterpolationMethod: u32,
+    /// The method used on the previous frame; a change resets the accumulators. Set to
+    /// [`INTERPOLATION_METHOD_PAUSED`](crate::game::Game::INTERPOLATION_METHOD_PAUSED) when the frame takes the
+    /// paused path.
     pub m_PrevInterpolationMethod: u32,
+    /// A console override for [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod);
+    /// [`INTERPOLATION_OVERRIDE_NONE`](crate::game::Game::INTERPOLATION_OVERRIDE_NONE) when unset.
     pub m_InterpolationOverride: i32,
     _field_a4: [u8; 444],
     pub m_DecoupleEnabled: bool,
     _field_261: [u8; 87],
+    /// The [`GameUpdateFlags`](crate::game::GameUpdateFlags) bit set gating the phases of [`Update`](crate::game::Game::Update): the sim
+    /// step, the render-bookkeeping step, and the tools step.
     pub m_UpdateFlags: u32,
     _field_2bc: [u8; 4],
 }
@@ -35,6 +46,17 @@ impl Game {
     }
 }
 impl Game {
+    pub const Destructor_ADDRESS: usize = 0x140967600;
+    /// `CGame::~CGame`: tears down the message-box manager, the game resource cache and handler,
+    /// the profiler utility, and the version display.
+    pub unsafe fn Destructor(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Destructor_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const Draw_ADDRESS: usize = 0x140952390;
     pub unsafe fn Draw(&self, dt: f32) {
         unsafe {
@@ -86,8 +108,29 @@ impl Game {
     }
 }
 impl Game {
+    /// The [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod) chosen while a cutscene plays:
+    /// the same accumulator, but [`UpdateGame`](crate::game::Game::UpdateGame) runs once per whole step
+    /// accumulated (capped), subtracting one per update.
+    pub const INTERPOLATION_METHOD_ACCUMULATED: u32 = 2;
+    /// The [`m_PrevInterpolationMethod`](crate::game::Game::m_PrevInterpolationMethod) value written when the
+    /// frame takes the paused path; it matches no method, so the next unpaused frame resets the
+    /// accumulators.
+    pub const INTERPOLATION_METHOD_PAUSED: u32 = 4294967295;
+    /// The [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod) chosen during gameplay: the
+    /// fractional sim step accumulates in `m_RunningFrameFraction` and [`UpdateGame`](crate::game::Game::UpdateGame)
+    /// runs at most once per render frame. The method names are descriptive; the engine uses bare
+    /// integers.
+    pub const INTERPOLATION_METHOD_SINGLE_STEP: u32 = 1;
+    /// The [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod) that derives the number of sim
+    /// steps from `QueryPerformanceCounter` wall-clock time since the method was entered, running
+    /// several [`UpdateGame`](crate::game::Game::UpdateGame) calls per frame when rendering falls behind. Only
+    /// reachable through [`m_InterpolationOverride`](crate::game::Game::m_InterpolationOverride).
+    pub const INTERPOLATION_METHOD_TIME_BASED: u32 = 3;
+    /// The [`m_InterpolationOverride`](crate::game::Game::m_InterpolationOverride) value meaning no override:
+    /// the method chosen each frame stands.
+    pub const INTERPOLATION_OVERRIDE_NONE: i32 = -1;
     /// The intra-`Update` site at which the game's per-frame render bookkeeping starts: the
-    /// `m_UpdateFlags & 4` check (the `jz`) that normally gates `UpdateRender` (and everything
+    /// [`E_GUF_RENDER`](crate::game::GameUpdateFlags::E_GUF_RENDER) check (the `jz`) that normally gates `UpdateRender` (and everything
     /// after it) on the frame-pacing mode sits here.
     pub const UPDATE_RENDER_GATE_OFFSET: u64 = 1927;
     /// The intra-`Update` site at which the render bookkeeping ends: `++m_RenderCount`, the last
@@ -220,6 +263,46 @@ impl GameState {
             f(update_contexts)
         }
     }
+}
+#[repr(C, align(8))]
+/// `CGameStateRun`: the in-game state's static update functions.
+pub struct GameStateRun {}
+impl GameStateRun {
+    pub const UpdateRenderPaused_ADDRESS: usize = 0x1409AE200;
+    /// The render-side update the run state performs while the game is paused: drives the
+    /// landscape, UI prerender, video, water simulation, and resource streaming, and waits for the
+    /// CPU draw, without running the camera update.
+    pub unsafe fn UpdateRenderPaused(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::UpdateRenderPaused_ADDRESS);
+            f(update_contexts)
+        }
+    }
+}
+impl std::convert::AsRef<GameStateRun> for GameStateRun {
+    fn as_ref(&self) -> &GameStateRun {
+        self
+    }
+}
+impl std::convert::AsMut<GameStateRun> for GameStateRun {
+    fn as_mut(&mut self) -> &mut GameStateRun {
+        self
+    }
+}
+crate::__bitflags! {
+    #[doc =
+    " `CGame::EGameUpdateFlags`: the phases of [`Game::Update`](crate::game::Game::Update) enabled by"]
+    #[doc = " [`Game::m_UpdateFlags`](crate::game::Game::m_UpdateFlags)."] pub struct
+    GameUpdateFlags : u32 { const E_GUF_TOOLS = 1usize as _; const E_GUF_UPDATE = 2usize
+    as _; const E_GUF_RENDER = 4usize as _; }
+}
+fn _GameUpdateFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], GameUpdateFlags>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 pub struct ProjectContext {}

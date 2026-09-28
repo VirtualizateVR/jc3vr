@@ -1,4 +1,6 @@
 #![cfg_attr(any(), rustfmt::skip)]
+pub mod game_pause_utility;
+pub mod hud_ui;
 pub mod overlay_ui;
 pub mod scaleform;
 pub mod ui_manager;

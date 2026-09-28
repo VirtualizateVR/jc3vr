@@ -86,14 +86,15 @@ impl std::convert::AsMut<DrawThreadTaskParam> for DrawThreadTaskParam {
     }
 }
 #[repr(C, align(8))]
-/// One reflection-proxy depth-history slot in the planar / water reflection state machine. Five of
-/// these live on the graphics engine; the lifecycle byte advances once per scene dispatch.
+/// One reflection-proxy depth-history slot in the planar / water reflection state machine
+/// (`CGraphicsEngine::SEffectInfo`). The graphics engine holds an array of these in
+/// [`GraphicsEngine::m_EffectInfo`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_EffectInfo), and the lifecycle byte advances once per scene dispatch.
 pub struct EffectInfo {
     /// The reflection-proxy depth texture.
     pub m_DepthTexture: *mut crate::graphics_engine::graphics_engine::HTexture_t,
     pub m_Transform: crate::types::math::Matrix4,
-    /// The lifecycle counter: `0` is free, `2` promotes to `3`, `3` is picked, otherwise it
-    /// increments.
+    /// The lifecycle counter, one of the `FRAME_INDEX_*` constants on this type. Any other non-free
+    /// value increments once per dispatch.
     pub m_FrameIndex: u8,
     _field_49: [u8; 7],
 }
@@ -104,6 +105,23 @@ fn _EffectInfo_size_check() {
     unreachable!()
 }
 impl EffectInfo {}
+impl EffectInfo {
+    /// The lifecycle value of a slot whose depth was copied this dispatch. The next dispatch
+    /// increments it to [`FRAME_INDEX_READY`](crate::graphics_engine::graphics_engine::EffectInfo::FRAME_INDEX_READY).
+    pub const FRAME_INDEX_COPIED: u8 = 1;
+    /// The lifecycle value of a free slot. The `CopyEffectTextures` stage of
+    /// [`GraphicsEngine::HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask) copies the reflection-proxy depth into the last free
+    /// slot it finds and marks that slot [`FRAME_INDEX_COPIED`](crate::graphics_engine::graphics_engine::EffectInfo::FRAME_INDEX_COPIED).
+    pub const FRAME_INDEX_FREE: u8 = 0;
+    /// The lifecycle value of the picked slot. The scan stores its index in
+    /// [`GraphicsEngine::m_EffectInfoIndex`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_EffectInfoIndex); the stage then writes the render camera's
+    /// view-projection into its [`m_Transform`](crate::graphics_engine::graphics_engine::EffectInfo::m_Transform) and resets it to
+    /// [`FRAME_INDEX_FREE`](crate::graphics_engine::graphics_engine::EffectInfo::FRAME_INDEX_FREE).
+    pub const FRAME_INDEX_PICKED: u8 = 3;
+    /// The lifecycle value of a slot whose copy is one dispatch old. The scan promotes it to
+    /// [`FRAME_INDEX_PICKED`](crate::graphics_engine::graphics_engine::EffectInfo::FRAME_INDEX_PICKED).
+    pub const FRAME_INDEX_READY: u8 = 2;
+}
 impl std::convert::AsRef<EffectInfo> for EffectInfo {
     fn as_ref(&self) -> &EffectInfo {
         self
@@ -159,7 +177,19 @@ pub struct GraphicsEngine {
     /// *next* [`Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw)'s entry.
     /// [`WaitForCPUDrawToFinish`](crate::graphics_engine::graphics_engine::GraphicsEngine::WaitForCPUDrawToFinish) does *not* wait on it.
     pub m_DrawThreadWorkSignal: u32,
-    _field_34: [u8; 212],
+    _field_34: [u8; 84],
+    /// The frames remaining before the pending screenshot is written (`SScreenShotData::m_FramesUntilScreenshot`),
+    /// negative when none is pending. [`HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask) counts it
+    /// down once per dispatch, at the point matching [`m_ScreenshotMode`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_ScreenshotMode), and
+    /// calls [`SaveScreen`](crate::graphics_engine::graphics_engine::GraphicsEngine::SaveScreen) when it goes negative.
+    pub m_FramesUntilScreenshot: i32,
+    /// Whether the pending screenshot is taken before or after the UI is drawn
+    /// (`SScreenShotData::m_Mode`).
+    pub m_ScreenshotMode: crate::graphics_engine::graphics_engine::ScreenshotMode,
+    _field_90: [u8; 2],
+    /// Whether the pending screenshot also saves the depth buffer (`SScreenShotData::m_SaveDepth`).
+    pub m_ScreenshotSaveDepth: bool,
+    _field_93: [u8; 117],
     /// The display-mode state machine serviced once per frame by
     /// [`HandleModeChange`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleModeChange): while idle it applies a deferred
     /// window resize, and while a mode change is pending it applies the fullscreen/adapter change.
@@ -223,7 +253,7 @@ pub struct GraphicsEngine {
     /// Hi-Z / downsampled depth ("DownsampledDepth").
     pub m_DownSampledDepthTexture: *mut crate::graphics_engine::texture::Texture,
     _field_1080: [u8; 32],
-    /// Reflection-proxy depth-history (planar / water reflection state machine), 5 slots.
+    /// Reflection-proxy depth-history (planar / water reflection state machine).
     pub m_EffectInfo: [crate::graphics_engine::graphics_engine::EffectInfo; 5],
     /// Final linear back buffer ("BackBufferLinear").
     pub m_BackBufferLinear: *mut crate::graphics_engine::texture::Texture,
@@ -233,14 +263,70 @@ pub struct GraphicsEngine {
     /// [`HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask) for the world filters and the
     /// post-effect stack.
     pub m_PostEffectRenderSetup: *mut crate::graphics_engine::graphics_engine::HRenderSetup_t,
-    _field_1240: [u8; 126],
+    _field_1240: [u8; 4],
+    /// The device's display width, copied from `Graphics::GetDeviceInfo` by
+    /// [`ApplyResize`](crate::graphics_engine::graphics_engine::GraphicsEngine::ApplyResize) and [`ApplyMode`](crate::graphics_engine::graphics_engine::GraphicsEngine::ApplyMode).
+    pub m_DeviceDisplayWidth: u32,
+    /// The device's display height, copied alongside
+    /// [`m_DeviceDisplayWidth`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_DeviceDisplayWidth).
+    pub m_DeviceDisplayHeight: u32,
+    _field_124c: [u8; 12],
+    /// The title-safe area width, `max(32, 4 * width / 5)`, recomputed by
+    /// [`ApplyResize`](crate::graphics_engine::graphics_engine::GraphicsEngine::ApplyResize) and [`ApplyMode`](crate::graphics_engine::graphics_engine::GraphicsEngine::ApplyMode).
+    pub m_TitleSafeWidth: u32,
+    /// The title-safe area height, `max(32, 4 * height / 5)`.
+    pub m_TitleSafeHeight: u32,
+    _field_1260: [u8; 40],
+    /// The applied window width, written by [`ApplyResize`](crate::graphics_engine::graphics_engine::GraphicsEngine::ApplyResize) (the clamped resize
+    /// width) and [`ApplyMode`](crate::graphics_engine::graphics_engine::GraphicsEngine::ApplyMode) (the new mode's width).
+    pub m_AppliedWidth: u32,
+    /// The applied window height, written alongside [`m_AppliedWidth`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_AppliedWidth).
+    pub m_AppliedHeight: u32,
+    /// The G-buffer UV scale the fullscreen reconstruction vertex shaders apply (`UVScale`, their
+    /// vertex `cb1[5].xy`). `CRenderPass::SetupRenderContext` copies it into
+    /// [`RenderContext::m_UVScale`](crate::graphics_engine::graphics_engine::RenderContext::m_UVScale) each pass, and the clustered lighting
+    /// resolve uploads it from there. The writer has not been traced.
+    pub m_UVScale: [f32; 2],
+    _field_1298: [u8; 4],
+    /// Set to request an output-gamma change; [`Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw) applies it through
+    /// `Graphics::SetOutputGamma` under the context lock and clears it.
+    pub m_OutputGammaChanged: bool,
+    _field_129d: [u8; 11],
+    /// A QPC timestamp from which [`HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask) measures
+    /// [`m_CPUDrawStallDuration`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_CPUDrawStallDuration). Its writer has not been
+    /// traced.
+    pub m_CPUDrawStallTime: u64,
+    /// Seconds from [`m_CPUDrawStallTime`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_CPUDrawStallTime) to the end of
+    /// [`HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask), written at its tail.
+    pub m_CPUDrawStallDuration: f32,
+    /// The dispatch's CPU draw time in seconds, from [`draw_start_time`](get_draw_start_time) to the end of
+    /// [`HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask), written at its tail
+    /// (`m_DrawTime`).
+    pub m_DrawTime: f32,
+    /// The anisotropy level the render-block types were last created with. [`Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw)
+    /// recreates every render-block type when it differs from [`m_Aniso`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_Aniso), then copies
+    /// it over.
+    pub m_OldAniso: u8,
+    /// The requested anisotropy level, copied per pass into the render context.
+    pub m_Aniso: u8,
+    _field_12ba: [u8; 2],
+    /// Whether soft particles are enabled
+    /// ([`RenderContextFlags::m_UseSoftParticles`](crate::graphics_engine::graphics_engine::RenderContextFlags::m_UseSoftParticles)).
+    pub m_SoftParticlesEnabled: bool,
+    /// Whether point-light specular is enabled
+    /// ([`RenderContextFlags::m_UsePointLightSpecular`](crate::graphics_engine::graphics_engine::RenderContextFlags::m_UsePointLightSpecular)).
+    pub m_PointLightSpecularEnabled: bool,
     /// Whether [`HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask) renders the 3D scene
     /// this frame (GBuffer, world, post-effects) rather than only the UI. [`Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw)
     /// sets it from the game state and the UI's static-background grab: it is cleared while a
     /// full-screen UI with a static background is shown (pause / map / menus), in which case the draw
     /// thread clears the target to transparent instead of rendering the scene.
     pub m_DrawScene: bool,
-    _field_12bf: [u8; 9],
+    /// Set on the first frame (by `CGraphicsEngine::InitializeSystem`) so the [`Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw)
+    /// prologue skips its [`Flip`](crate::graphics_engine::graphics_engine::GraphicsEngine::Flip) once; the prologue clears it after the check
+    /// (`m_FirstFrame`).
+    pub m_FirstFrame: bool,
+    _field_12c0: [u8; 8],
     /// Index of the reflection-proxy slot picked this frame.
     pub m_EffectInfoIndex: u32,
     _field_12cc: [u8; 52],
@@ -355,14 +441,14 @@ impl GraphicsEngine {
     /// `BackBufferLinear` alias plus [`m_BackBufferRenderSetup`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_BackBufferRenderSetup)
     /// and the post-effect setup are instead built against the live swapchain surface via
     /// `GetDeviceSurface(BackBuffer)`, independent of
-    /// `device_info`. Per-pass viewports follow the bound target's size, so no per-pass viewport
-    /// changes are needed. Assumes the previously created setups have been torn down
+    /// `device_info`. Per-pass viewports follow the bound target's size. Assumes the previously
+    /// created setups have been torn down
     /// ([`DestroyRenderSetups`](crate::graphics_engine::graphics_engine::GraphicsEngine::DestroyRenderSetups)) and that no draw is in flight.
     ///
-    /// **The release build leaves the return value undefined.** The declared C++ return type is
-    /// `bool`, but release codegen dropped the final `return 1`: the last instruction before the
+    /// The return value is undefined. The declared C++ return type is `bool`, but the compiled
+    /// code has no final `return 1`: the last instruction before the
     /// epilogue is the trailing [`CreateRenderSetup`](crate::graphics_engine::surface::CreateRenderSetup) call, so `al` carries the low byte of the
-    /// pointer it returned. Callers must ignore the result.
+    /// pointer it returned. The result therefore carries no success information.
     pub unsafe fn CreateRenderSetups(
         &mut self,
         device_info: *const crate::graphics_engine::device::DeviceInfo,
@@ -421,6 +507,37 @@ impl GraphicsEngine {
             f(self as *mut Self as _, width, height)
         }
     }
+    pub const ApplyMode_ADDRESS: usize = 0x1400F3AF0;
+    /// Applies a pending display-mode change (fullscreen, resolution, or adapter): has the UI drop its
+    /// device references, rebuilds the device through `Graphics::ResetDevice` with the new
+    /// parameters, updates the graphics params, the cursor,
+    /// [`m_DeviceDisplayWidth`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_DeviceDisplayWidth)/[`m_DeviceDisplayHeight`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_DeviceDisplayHeight),
+    /// [`m_AppliedWidth`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_AppliedWidth)/[`m_AppliedHeight`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_AppliedHeight), and the
+    /// title-safe area, re-binds [`m_BackBufferRenderSetup`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_BackBufferRenderSetup), and
+    /// restores the UI. Returns whether the device reset succeeded.
+    pub unsafe fn ApplyMode(&mut self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
+                Self::ApplyMode_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const InitializeSystem_ADDRESS: usize = 0x1400F4560;
+    /// The one-time startup bring-up of the graphics engine (`CGraphicsEngine::InitializeSystem`,
+    /// virtual): creates the device (with a hardcoded `ABGR32` front-buffer format), selects the shader
+    /// bundle (the `"ShadersConstMath"` variants on Intel adapters), creates the render setups, the
+    /// shadow and reflective-shadow managers, and the GPU profiler, and sets
+    /// [`m_FirstFrame`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_FirstFrame).
+    pub unsafe fn InitializeSystem(&mut self, ctx: *const ::std::ffi::c_void) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ctx: *const ::std::ffi::c_void,
+            ) -> bool = ::std::mem::transmute(Self::InitializeSystem_ADDRESS);
+            f(self as *mut Self as _, ctx)
+        }
+    }
     pub const HandleModeChange_ADDRESS: usize = 0x1400F40C0;
     /// Services the display-mode state machine once per frame from the [`Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw)
     /// prologue: applies a deferred resize ([`ApplyResize`](crate::graphics_engine::graphics_engine::GraphicsEngine::ApplyResize)) when one is
@@ -441,8 +558,8 @@ impl GraphicsEngine {
     /// device's texture-to-file writer, marks the screenshot request done, and clears a filename
     /// whose write failed. Called from the draw thread once the frame the request was made on has
     /// finished compositing, with the engine's
-    /// [`m_BackBufferLinear`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_BackBufferLinear) as the surface. The release build's symbol
-    /// table labels this address `NGraphicsEngine::CGPUProfiler::EndFrame`.
+    /// [`m_BackBufferLinear`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_BackBufferLinear) as the surface. IDA labels this
+    /// address `NGraphicsEngine::CGPUProfiler::EndFrame`.
     pub unsafe fn SaveScreen(
         &mut self,
         surface: *mut crate::graphics_engine::texture::Texture,
@@ -492,7 +609,7 @@ impl GraphicsEngine {
     pub const UpdateCursor_ADDRESS: usize = 0x1400A1AF0;
     /// Applies [`m_ActiveCursor`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_ActiveCursor) to the OS: for `None` it sets a
     /// null `HCURSOR` and clips the cursor to the client rect (when the window is foreground);
-    /// otherwise it unclips and sets `GraphicsParams::m_Cursors[cursor]`. The four entries are
+    /// otherwise it unclips and sets `GraphicsParams::m_Cursors[cursor]`. The entries are
     /// loaded at startup as the system `IDC_ARROW`, `IDC_CROSS`, `IDC_HAND`, and `IDC_NO`
     /// cursors. Called from [`WndProc`](crate::window::WndProc) on `WM_SETCURSOR`.
     pub unsafe fn UpdateCursor(&mut self) {
@@ -715,8 +832,7 @@ fn _OccluderCollectionManager_size_check() {
 impl OccluderCollectionManager {
     pub const GetBFBCFrustumParamsForCameraAndTime_ADDRESS: usize = 0x1400D68B0;
     /// Build or fetch the cached BFBC cull-frustum parameters for `camera` at `time`. The frustum is
-    /// derived from `camera.m_View` combined with `camera.m_ProjectionF`, so overwriting the camera's
-    /// `m_ProjectionF` before this runs widens the resulting cull frustum without touching the view.
+    /// derived from `camera.m_View` combined with `camera.m_ProjectionF`.
     /// `out_params` and `out_state` receive pointers into the manager's per-camera cache slot;
     /// `*out_params` is the [`BFBCFrustumCullParameters`](crate::graphics_engine::graphics_engine::BFBCFrustumCullParameters).
     pub unsafe fn GetBFBCFrustumParamsForCameraAndTime(
@@ -788,7 +904,7 @@ pub struct RenderContext {
     /// The translation-free view-projection for this dispatch (the rotation and projection without the
     /// camera world translation). The tessellation constant buffers bake it directly (e.g.
     /// [`RenderBlockTypeTerrain::SetupConstantBuffers`](crate::graphics_engine::render_block::RenderBlockTypeTerrain)),
-    /// so it carries the per-view (and, off-axis, per-eye) projection.
+    /// so it carries the per-view projection.
     pub m_OffsetViewProjection: crate::types::math::Matrix4,
     _field_118: [u8; 256],
     /// The camera world position for this dispatch, copied from the camera's transform translation
@@ -796,7 +912,15 @@ pub struct RenderContext {
     /// subtracts it per object, and [`RenderPass::DoDraw`](crate::graphics_engine::render_pass::RenderPass::DoDraw) hands it to
     /// [`SortList`](crate::graphics_engine::render_pass::RenderPass::SortList) as the sort camera position.
     pub m_CameraPosition: crate::types::math::Vector3,
-    _field_224: [u8; 100],
+    _field_224: [u8; 12],
+    /// The world transform of the camera this dispatch draws with, copied from the camera's
+    /// `m_TransformF` by [`SetRenderContextCamera`](crate::graphics_engine::render_pass::RenderPass::SetRenderContextCamera). Its
+    /// translation row is the same world position as
+    /// [`m_CameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_CameraPosition);
+    /// [`SetGlobalShaderProgramCameraConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderProgramCameraConstants)
+    /// uploads that row and the forward row to the vertex GlobalConstants.
+    pub m_CameraTransform: crate::types::math::Matrix4,
+    _field_270: [u8; 24],
     /// The world position of the camera manager's render camera — the translation row of
     /// `CCameraManager::GetRenderCamera()`'s `m_TransformF` — written each pass by
     /// `CRenderPass::SetupRenderContext`. Distinct from
@@ -804,8 +928,14 @@ pub struct RenderContext {
     /// with (a light camera during the shadow passes); this always holds the main scene camera's
     /// position. `CLightManager::SetupLightingData` and the clustered deferred-lighting pass
     /// subtract it from each light's world position to build the camera-relative light proxies.
+    /// `CRenderEngine::SetFog` reads its `y` (height) component.
     pub m_RenderCameraPosition: crate::types::math::Vector3,
-    _field_294: [u8; 104],
+    /// The six world-space frustum planes of the camera this dispatch draws with, copied from the
+    /// camera by [`SetRenderContextCamera`](crate::graphics_engine::render_pass::RenderPass::SetRenderContextCamera).
+    /// [`SetGlobalShaderProgramCameraConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderProgramCameraConstants)
+    /// uploads them as vertex GlobalConstants rows 38..43.
+    pub m_FrustumPlanes: [crate::types::math::Vector4; 6],
+    _field_2f4: [u8; 8],
     /// The vertical field of view in radians, copied from [`Camera::m_FOV`](crate::camera::camera::Camera::m_FOV) by
     /// [`SetRenderContextCamera`](crate::graphics_engine::render_pass::RenderPass::SetRenderContextCamera).
     pub CameraFOV: f32,
@@ -827,10 +957,18 @@ pub struct RenderContext {
     /// The graphics context this dispatch draws through. The render blocks' draw paths and the
     /// scope markers ([`BeginScopeMarker`](crate::graphics_engine::graphics_engine::BeginScopeMarker) / [`EndScopeMarker`](crate::graphics_engine::graphics_engine::EndScopeMarker)) read it off the render context.
     pub m_Context: *mut crate::graphics_engine::graphics_engine::HContext_t,
-    _field_320: [u8; 16],
+    /// The vertex GlobalConstants constant buffer, copied per pass from the render engine by
+    /// `CRenderEngine::UpdateRenderContextGlobals`. Render blocks and full-screen passes bind it as
+    /// vertex constant buffer 0.
+    pub m_VPGlobals: *mut ::std::ffi::c_void,
+    /// The fragment GlobalConstants constant buffer, copied per pass from the render engine by
+    /// `CRenderEngine::UpdateRenderContextGlobals`. Render blocks and full-screen passes bind it as
+    /// fragment constant buffer 0.
+    pub m_FPGlobals: *mut ::std::ffi::c_void,
     /// The composite environment cube map (static env blended with the dynamic sky cube), the
     /// ambient specular source the material shaders sample. Written per frame from the render
-    /// engine's composite cube.
+    /// engine's composite cube. [`SetupLightingTextures`](crate::graphics_engine::render_engine::RenderBlockTypeBase::SetupLightingTextures)
+    /// binds it on fragment texture slot 11.
     pub m_EnvCubeTexture: *mut ::std::ffi::c_void,
     /// The dynamic (planar) reflection colour texture. `CNvWaterHighEndRenderBlock::Setup` binds it
     /// on fragment slot 1 (clearing the slot when the pointer is null).
@@ -840,13 +978,26 @@ pub struct RenderContext {
     /// `CNvWaterHighEndRenderBlock::Setup` binds it on fragment slot 12 (clearing the slot when the
     /// pointer is null).
     pub m_DynamicReflectionAlphaTexture: *mut crate::graphics_engine::texture::Texture,
-    _field_348: [u8; 8],
     /// The scene colour texture as of this pass, the screen-space refraction source.
     /// `CNvWaterHighEndRenderBlock::Setup` binds it on fragment slot 3.
+    /// The light falloff texture, copied per frame from the light manager.
+    /// [`SetupLightingTextures`](crate::graphics_engine::render_engine::RenderBlockTypeBase::SetupLightingTextures)
+    /// binds it on fragment texture slot 12.
+    pub m_LightFalloffTexture: *mut crate::graphics_engine::texture::Texture,
     pub m_BackBufferTexture: *mut crate::graphics_engine::texture::Texture,
     /// The scene depth texture. `CNvWaterHighEndRenderBlock::Setup` binds it on fragment slot 0.
     pub m_DepthBufferTexture: *mut crate::graphics_engine::texture::Texture,
-    _field_360: [u8; 36],
+    /// The half-resolution depth texture, copied per pass from
+    /// [`GraphicsEngine::m_DownSampledDepthTexture`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_DownSampledDepthTexture).
+    pub m_DownsampledDepthBufferTexture: *mut crate::graphics_engine::texture::Texture,
+    _field_368: [u8; 8],
+    /// The linear-filtered lighting sampler, copied per frame from the light manager.
+    /// [`SetupLightingTextures`](crate::graphics_engine::render_engine::RenderBlockTypeBase::SetupLightingTextures)
+    /// binds it on fragment sampler slot 10.
+    pub m_SamplerStateLightingLinear: *mut ::std::ffi::c_void,
+    /// The cube-map lighting sampler, bound on fragment sampler slot 11.
+    pub m_SamplerStateLightingCube: *mut ::std::ffi::c_void,
+    _field_380: [u8; 4],
     pub m_Flags: crate::graphics_engine::graphics_engine::RenderContextFlags,
     _field_385: [u8; 3],
     /// The night-light reference level for the current time of day, interpolated from the
@@ -858,24 +1009,61 @@ pub struct RenderContext {
     pub m_Dt: f32,
     /// The time of day in hours (0-24), copied per frame from the world time.
     pub m_TimeOfDay: f32,
-    /// The emissive intensity scale for the current time of day.
+    /// The emissive intensity scale for the current time of day, set each pass by
+    /// `CRenderPass::SetupRenderContext` from
+    /// [`LightManager::m_TimeOfDayLightModulator`](crate::graphics_engine::light_manager::LightManager::m_TimeOfDayLightModulator)
+    /// (through `CLightManager::GetTimeOfDayLightModulator`).
     pub m_TimeOfDayEmissiveScale: f32,
-    _field_39c: [u8; 4],
-    /// The clustered-lighting frame constant buffer, copied per frame from the light manager.
+    /// The G-buffer UV scale (`UVScale`), copied each pass by `CRenderPass::SetupRenderContext` from
+    /// [`GraphicsEngine::m_UVScale`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_UVScale). The clustered deferred-lighting
+    /// resolve uploads the register starting here as its vertex `cb1[5]`, which the fullscreen
+    /// reconstruction vertex shaders multiply into their G-buffer UV, and
+    /// [`RenderPass::PreDraw`](crate::graphics_engine::render_pass::RenderPass::PreDraw) scales the
+    /// depth-resolve rectangle (the display size) by it.
+    pub m_UVScale: [f32; 2],
+    _field_3a4: [u8; 4],
+    /// The clustered-lighting frame constant buffer (`LightingFrameConsts`: the packed point, spot,
+    /// and projection light arrays), copied per frame by `CLightManager::UpdateRenderContext`.
+    /// [`SetupForwardLightingResources`](crate::graphics_engine::render_engine::RenderBlockTypeBase::SetupForwardLightingResources)
+    /// and the clustered resolve bind it as fragment constant buffer 3.
     pub m_LightBuffer: *mut ::std::ffi::c_void,
-    /// The clustered light-grid lookup texture for this frame, copied from the light manager's
-    /// three-slot per-frame ring (indexed by the render context frame counter modulo three).
+    /// The clustered light-grid lookup texture for this frame. `CLightManager::UpdateRenderContext`
+    /// copies it from the light manager's per-frame ring (indexed by the render context frame
+    /// counter modulo [`RING_SIZE`](crate::graphics_engine::graphics_engine::RenderFrameCounters::RING_SIZE)), or from a single light-assignment output texture when the
+    /// clustered light-assignment path is active
+    /// ([`m_UseClusteredLightAssignment`](crate::graphics_engine::graphics_engine::RenderContextFlags::m_UseClusteredLightAssignment)).
+    /// [`SetupLightingTextures`](crate::graphics_engine::render_engine::RenderBlockTypeBase::SetupLightingTextures)
+    /// binds it on fragment texture slot 31.
     pub m_LightLookup: *mut ::std::ffi::c_void,
-    /// The clustered light index buffer for this frame, from the same three-slot ring as
-    /// [`m_LightLookup`](crate::graphics_engine::graphics_engine::RenderContext::m_LightLookup).
-    pub m_LightIndexBuffer: *mut ::std::ffi::c_void,
-    /// The lighting tuning constant buffer.
-    pub m_LightTuningBuffer: *mut ::std::ffi::c_void,
-    /// The first of the paired terrain horizon maps (large-scale sky-visibility occlusion).
-    pub m_HorizonMap0: *mut ::std::ffi::c_void,
-    /// The second of the paired terrain horizon maps.
-    pub m_HorizonMap1: *mut ::std::ffi::c_void,
-    _field_3d0: [u8; 24],
+    /// The render setup the second (fill) phase of the clustered light assignment draws into.
+    /// `CRenderBlockDeferredLighting::DrawClustered` binds it, samples
+    /// [`m_LightAssignmentTexture`](crate::graphics_engine::graphics_engine::RenderContext::m_LightAssignmentTexture) on fragment slot 0, and draws a
+    /// fullscreen triangle per depth slice. Copied per frame by `CLightManager::UpdateRenderContext`.
+    pub m_LightAssignmentFillRenderSetup: *mut crate::graphics_engine::graphics_engine::HRenderSetup_t,
+    /// The first light-assignment phase's output texture (one texel per 64-pixel tile, arrayed over
+    /// light chunks), read by the fill phase. Copied per frame by
+    /// `CLightManager::UpdateRenderContext`.
+    pub m_LightAssignmentTexture: *mut crate::graphics_engine::texture::Texture,
+    /// The render setup the first clustered light-assignment phase draws into (the light proxy
+    /// spheres and cones rasterized against the tile grid). `CRenderBlockDeferredLighting::DrawClustered`
+    /// binds it and clears every colour target to one before drawing. Copied per frame by
+    /// `CLightManager::UpdateRenderContext`.
+    pub m_LightAssignmentRenderSetup: *mut crate::graphics_engine::graphics_engine::HRenderSetup_t,
+    /// The first of the paired terrain horizon maps (large-scale sky-visibility occlusion), copied by
+    /// [`SetRenderContextCamera`](crate::graphics_engine::render_pass::RenderPass::SetRenderContextCamera) from the shadow manager's
+    /// parity-indexed pair
+    /// ([`ShadowManager::m_HorizonMaps`](crate::graphics_engine::shadow_manager::ShadowManager::m_HorizonMaps)).
+    /// [`SetupLightingTextures`](crate::graphics_engine::render_engine::RenderBlockTypeBase::SetupLightingTextures)
+    /// binds it on fragment texture slot 44, substituting
+    /// [`ShadowManager::m_HorizonMapFallback`](crate::graphics_engine::shadow_manager::ShadowManager::m_HorizonMapFallback)
+    /// when it is null.
+    pub m_HorizonMap0: *mut crate::graphics_engine::texture::Texture,
+    /// The second of the paired terrain horizon maps, copied like
+    /// [`m_HorizonMap0`](crate::graphics_engine::graphics_engine::RenderContext::m_HorizonMap0) and bound on fragment texture slot 45.
+    pub m_HorizonMap1: *mut crate::graphics_engine::texture::Texture,
+    /// The frame's packed point-light records (72 bytes each), from the light manager's per-frame
+    /// ring slot. The clustered light assignment reads each light's position from them.
+    pub m_PointLightInfo: *mut ::std::ffi::c_void,
     /// The number of point lights active for this render frame, copied by
     /// `CRenderPass::SetupRenderContext` from
     /// `CLightManager::GetActiveRenderPointLightCount`. The clustered deferred-lighting pass uses it
@@ -883,7 +1071,10 @@ pub struct RenderContext {
     /// (including its render-target clear) when it and
     /// [`m_ActiveSpotLightCount`](crate::graphics_engine::graphics_engine::RenderContext::m_ActiveSpotLightCount) are both zero.
     pub m_ActivePointLightCount: i32,
-    _field_3ec: [u8; 12],
+    _field_3ec: [u8; 4],
+    /// The frame's packed spot-light records (96 bytes each), from the light manager's per-frame
+    /// ring slot. The clustered light assignment reads each light's position and cone from them.
+    pub m_SpotLightInfo: *mut ::std::ffi::c_void,
     /// The number of spot lights active for this render frame, copied by
     /// `CRenderPass::SetupRenderContext` from
     /// `CLightManager::GetActiveRenderSpotLightCount`. The clustered deferred-lighting pass uses it
@@ -893,10 +1084,26 @@ pub struct RenderContext {
     /// The atmospheric-scattering scene composite uploads it directly and derives its sky and fog
     /// brightness factors from the elevation (`y`) component.
     pub m_GlobalLightVector: crate::types::math::Vector3,
-    _field_408: [u8; 48],
-    /// The id (`ERenderPass`, see `render_engine::RenderPassId`) of the pass currently drawing
-    /// through this context, written by `SetupRenderContext` from the pass's index. `RP_NONE` (0)
-    /// outside a pass body.
+    /// The sun direction for this dispatch, copied by `CRenderPass::SetupRenderContext` from the
+    /// render engine's sun vector.
+    pub m_SunVector: crate::types::math::Vector3,
+    /// The global light's diffuse colour, copied by `CRenderPass::SetupRenderContext` from
+    /// [`LightManager::m_GlobalLightDiffuse`](crate::graphics_engine::light_manager::LightManager::m_GlobalLightDiffuse).
+    pub m_GlobalLightDiffuse: crate::types::math::Vector3,
+    /// The up vector of the shadow-casting light camera, written by
+    /// [`SetRenderContextCamera`](crate::graphics_engine::render_pass::RenderPass::SetRenderContextCamera) (`(0, 0, 1)` outside the shadow
+    /// passes).
+    pub m_UniformShadowUpVector: crate::types::math::Vector3,
+    /// The precipitation density, copied per pass from the render engine.
+    pub m_PrecipitationDensity: f32,
+    /// The wind strength, copied per pass from the render engine.
+    pub m_WindStrength: f32,
+    /// The wind animation phase, copied per pass from the render engine.
+    pub m_WindAnimation: f32,
+    /// The id (`ERenderPass`, see
+    /// [`RenderPassId`](crate::graphics_engine::render_engine::RenderPassId)) of the pass currently
+    /// drawing through this context, written by `SetupRenderContext` from the pass's index.
+    /// [`RP_NONE`](crate::graphics_engine::render_engine::RenderPassId::RP_NONE) outside a pass body.
     pub m_ActiveRenderPass: i32,
     _field_43c: [u8; 12],
     /// The per-real-frame stamp for this dispatch, set from [`render_frame_counters`](get_render_frame_counters)'s `m_FrameIndex`
@@ -905,16 +1112,21 @@ pub struct RenderContext {
     /// [`m_WasCBApplied`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_WasCBApplied) stamp
     /// to decide whether to re-upload the constant buffer.
     pub m_RenderFrameNo: u32,
-    /// The 8 per-atlas-slice projective shadow transforms, copied per dispatch from the shadow
+    /// The render-frame ring slot for this dispatch, `m_RenderFrameNo %`
+    /// [`RING_SIZE`](crate::graphics_engine::graphics_engine::RenderFrameCounters::RING_SIZE), written by
+    /// `CRenderPass::SetupRenderContext`. It selects the current slot of every per-frame ring the
+    /// draw side reads, including the instance-transform slot the render blocks pass to
+    /// [`RBIInfo::GetMatrix`](crate::graphics_engine::render_block::RBIInfo::GetMatrix).
+    pub m_RenderFrameIndex: u32,
+    /// The previous render frame's ring slot, `(m_RenderFrameNo + RING_SIZE - 1) %`
+    /// [`RING_SIZE`](crate::graphics_engine::graphics_engine::RenderFrameCounters::RING_SIZE), written alongside
+    /// [`m_RenderFrameIndex`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderFrameIndex).
+    pub m_PreviousRenderFrameIndex: u32,
+    /// The per-atlas-slice projective shadow transforms, copied per dispatch from the shadow
     /// manager's parity storage. The deferred lighting shaders index them dynamically by a light's
     /// packed slice index (`cb0[63 + 4*slice .. 66 + 4*slice]` in the GlobalConstants) to project a
     /// light-relative position into its shadow-atlas slice; the sun resolve uses
     /// [`m_ShadowCascades`](crate::graphics_engine::graphics_engine::RenderContext::m_ShadowCascades) instead.
-    /// The instance-transform slot the render blocks pass to
-    /// [`RBIInfo::GetMatrix`](crate::graphics_engine::render_block::RBIInfo::GetMatrix) for the current
-    /// dispatch.
-    pub m_TransformIndex: u32,
-    _field_450: [u8; 4],
     pub m_ShadowMatrices: [crate::types::math::Matrix4; 8],
     /// The forward-material cascaded sun-shadow transform + cascade box-test parameters.
     pub m_ShadowCascades: crate::graphics_engine::graphics_engine::ShadowCascades,
@@ -922,10 +1134,10 @@ pub struct RenderContext {
     /// parity storage (a byte store in [`RenderPass::SetRenderContextCamera`](crate::graphics_engine::render_pass::RenderPass::SetRenderContextCamera)).
     pub m_ActiveCascadeCount: u8,
     _field_775: [u8; 3],
-    /// The pass-family status bits for the current draw: `0x1` default, `0x2` static shadow map,
-    /// `0x4` dynamic shadow map. Render blocks branch on `& 6` to select the shadow/depth-only
-    /// path versus the full material path.
-    pub m_RenderStatus: u32,
+    /// The pass-family status bits for the current draw. Render blocks branch on the shadow-map
+    /// bits ([`RENDERSTATUS_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_SHADOWMAP)) to select the
+    /// shadow/depth-only path versus the full material path.
+    pub m_RenderStatus: crate::graphics_engine::render_pass::RenderStatus,
     _field_77c: [u8; 4],
     /// The render setup this context draws into. On the graphics engine's own context this is the
     /// context's copy of [`GraphicsEngine::m_BackBufferRenderSetup`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_BackBufferRenderSetup), written by
@@ -956,7 +1168,10 @@ crate::__bitflags! {
     #[doc =
     " Per-frame packed state bits carried by a [`RenderContext`](crate::graphics_engine::graphics_engine::RenderContext) (the packed bools that follow the"]
     #[doc = " aniso field)."] pub struct RenderContextFlags : u8 { const
-    m_CameraUnderwater = 1usize as _; }
+    m_CameraUnderwater = 1usize as _; const m_UseSoftParticles = 2usize as _; const
+    m_UsePointLightSpecular = 4usize as _; const m_IsIndoor = 8usize as _; const
+    m_Wireframe = 16usize as _; const m_UseSecondSun = 64usize as _; const
+    m_UseClusteredLightAssignment = 128usize as _; }
 }
 fn _RenderContextFlags_size_check() {
     unsafe {
@@ -968,7 +1183,8 @@ fn _RenderContextFlags_size_check() {
 #[repr(C, align(4))]
 /// Per-real-frame counters, advanced once in the [`GraphicsEngine::Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw) prologue. `m_FrameIndex`
 /// (set from the post-incrementing `m_Counter`) drives the TAA jitter phase and shadow parity;
-/// `m_RingIndex` is the three-slot constant-buffer ring.
+/// `m_RingIndex` is the slot of the constant-buffer ring, which has
+/// [`RING_SIZE`](crate::graphics_engine::graphics_engine::RenderFrameCounters::RING_SIZE) slots.
 pub struct RenderFrameCounters {
     pub m_Counter: u32,
     pub m_FrameIndex: u32,
@@ -981,6 +1197,11 @@ fn _RenderFrameCounters_size_check() {
     unreachable!()
 }
 impl RenderFrameCounters {}
+impl RenderFrameCounters {
+    /// The number of slots in the per-frame rings (`m_RingIndex = m_FrameIndex % RING_SIZE`), which
+    /// also sizes the light manager's per-frame light lookups and the render-block transform slots.
+    pub const RING_SIZE: u32 = 3;
+}
 impl std::convert::AsRef<RenderFrameCounters> for RenderFrameCounters {
     fn as_ref(&self) -> &RenderFrameCounters {
         self
@@ -990,6 +1211,20 @@ impl std::convert::AsMut<RenderFrameCounters> for RenderFrameCounters {
     fn as_mut(&mut self) -> &mut RenderFrameCounters {
         self
     }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// When a pending screenshot is taken relative to the UI draw
+/// (`CGraphicsEngine::EScreenshotMode`).
+pub enum ScreenshotMode {
+    ScreenshotWithUI = 0isize as _,
+    ScreenshotWithoutUI = 1isize as _,
+}
+fn _ScreenshotMode_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], ScreenshotMode>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(4))]
 /// The cascaded sun-shadow constants for the forward-material resolve: the cascade transform plus the
@@ -1025,17 +1260,33 @@ impl std::convert::AsMut<ShadowCascades> for ShadowCascades {
         self
     }
 }
+/// The QPC timestamp [`GraphicsEngine::HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask) records on entry; its tail measures
+/// [`GraphicsEngine::m_DrawTime`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_DrawTime) from it.
+pub unsafe fn get_draw_start_time() -> &'static mut i64 {
+    unsafe { &mut *(0x142ED0F58 as *mut i64) }
+}
 pub unsafe fn get_graphics_params() -> &'static mut crate::graphics_engine::graphics_engine::GraphicsParams {
     unsafe {
         &mut *(0x142D3A850
             as *mut crate::graphics_engine::graphics_engine::GraphicsParams)
     }
 }
+/// The previous frame's [`RenderFrameCounters::m_RingIndex`](crate::graphics_engine::graphics_engine::RenderFrameCounters::m_RingIndex), saved by the [`GraphicsEngine::Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw)
+/// prologue before it recomputes the ring index (`CGraphicsEngine::PrevRenderContextFrameIndex`).
+pub unsafe fn get_previous_render_context_frame_index() -> &'static mut u32 {
+    unsafe { &mut *(0x142E5B670 as *mut u32) }
+}
 pub unsafe fn get_render_frame_counters() -> &'static mut crate::graphics_engine::graphics_engine::RenderFrameCounters {
     unsafe {
         &mut *(0x142D3A6AC
             as *mut crate::graphics_engine::graphics_engine::RenderFrameCounters)
     }
+}
+/// `m_Counter %` [`RING_SIZE`](crate::graphics_engine::graphics_engine::RenderFrameCounters::RING_SIZE) after the [`GraphicsEngine::Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw)
+/// prologue increments the counter
+/// (`CGraphicsEngine::RenderFrameIndex`).
+pub unsafe fn get_render_frame_index() -> &'static mut u32 {
+    unsafe { &mut *(0x142E5B664 as *mut u32) }
 }
 pub const SetupRenderStates_ADDRESS: usize = 0x14195FEA0;
 /// The pre-draw pipeline-state flush at the top of every draw wrapper: for each dirty state category
@@ -1198,9 +1449,9 @@ pub unsafe fn BeginTimeStampDisjointQuery(
     }
 }
 pub const EndTimeStampDisjointQuery_ADDRESS: usize = 0x1419558B0;
-/// Ends the disjoint interval (`ID3D11DeviceContext::End`). In the release build the body is
+/// Ends the disjoint interval (`ID3D11DeviceContext::End`). The body is
 /// identical-code-folded with [`SetTimeStampQuery`](crate::graphics_engine::graphics_engine::SetTimeStampQuery) (both call `End` under the context mutex), so
-/// this shares its address; the release symbol table's placement at `0x141954000` is an unrelated
+/// this shares its address. IDA places this name on an unrelated
 /// two-instruction stub.
 pub unsafe fn EndTimeStampDisjointQuery(
     context: *mut crate::graphics_engine::graphics_engine::HContext_t,
@@ -1235,7 +1486,7 @@ pub unsafe fn QueryTimeStampFrequency(
 }
 pub const BeginScopeMarker_ADDRESS: usize = 0x141954D10;
 /// The developer scope-marker begin: opens a named instrumentation scope on the context. Compiled
-/// to an empty function in the release build, but its call sites and name strings survive
+/// to an empty function, but its call sites and name strings survive
 /// throughout the renderer -- the frame stages in `CGraphicsEngine::HandleDrawThreadTask`
 /// (`"Frame setup"`, `"CopyEffectTextures"`, `"Debug UI"`), the post-effect stack (SMAA, FXAA,
 /// depth of field, motion blur, lens flare, glare, tone mapping), deferred lighting, SSAO, SSR,
@@ -1259,7 +1510,7 @@ pub unsafe fn BeginScopeMarker(
 }
 pub const EndScopeMarker_ADDRESS: usize = 0x141954D20;
 /// Closes the innermost scope opened by [`BeginScopeMarker`](crate::graphics_engine::graphics_engine::BeginScopeMarker) on the context. Compiled to an empty
-/// function in the release build; the call sites survive.
+/// function; the call sites survive.
 pub unsafe fn EndScopeMarker(
     context: *mut crate::graphics_engine::graphics_engine::HContext_t,
 ) {
@@ -1280,5 +1531,19 @@ unsafe fn graphics_flip(
             device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
         ) -> i32 = ::std::mem::transmute(graphics_flip_ADDRESS);
         f(device)
+    }
+}
+pub const HandleDrawThreadTaskProxy_ADDRESS: usize = 0x1400F2C70;
+/// The fragment-job trampoline `CGraphicsEngine::DispatchDraw` posts when the draw runs on a worker:
+/// loads the graphics engine singleton and tail-calls
+/// [`HandleDrawThreadTask`](crate::graphics_engine::graphics_engine::GraphicsEngine::HandleDrawThreadTask) with `param`.
+pub unsafe fn HandleDrawThreadTaskProxy(
+    param: *mut crate::graphics_engine::graphics_engine::DrawThreadTaskParam,
+) -> u32 {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            param: *mut crate::graphics_engine::graphics_engine::DrawThreadTaskParam,
+        ) -> u32 = ::std::mem::transmute(HandleDrawThreadTaskProxy_ADDRESS);
+        f(param)
     }
 }

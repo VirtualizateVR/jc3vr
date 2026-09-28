@@ -3,7 +3,7 @@
 #[repr(C, align(4))]
 /// A hashed string id (`CHashString` / `ava::idstring`): a string reduced to its little-endian
 /// `hashlittle` hash, used as a type, state, and event id throughout the animation and event
-/// systems. Only the hash survives in the release build.
+/// systems. Only the hash is stored.
 pub struct HashString {
     /// The `hashlittle(name)` hash identifying the string.
     pub m_Hash: u32,

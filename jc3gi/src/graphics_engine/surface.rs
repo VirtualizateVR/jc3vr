@@ -1,7 +1,7 @@
 #![cfg_attr(any(), rustfmt::skip)]
 #[repr(C, align(8))]
-/// The parameters to [`Create2DTexture`](crate::graphics_engine::surface::Create2DTexture). Padding at `0x24` aligns [`m_Name`](crate::graphics_engine::surface::Create2DTextureParams::m_Name) to
-/// eight bytes.
+/// The parameters to [`Create2DTexture`](crate::graphics_engine::surface::Create2DTexture). Padding after [`m_PoolType`](crate::graphics_engine::surface::Create2DTextureParams::m_PoolType) aligns
+/// [`m_Name`](crate::graphics_engine::surface::Create2DTextureParams::m_Name) to eight bytes.
 pub struct Create2DTextureParams {
     pub m_Width: u32,
     pub m_Height: u32,
@@ -29,11 +29,10 @@ pub struct Create2DTextureParams {
     /// `m_Castable:1`, `m_ColorSpace:1`, `m_UnorderedAccess:1`, `m_MipLevelClamp:4`,
     /// `m_RenderCompression:1`.
     ///
-    /// [`Create2DTexture`](crate::graphics_engine::surface::Create2DTexture) reads four of them on D3D11: `m_ColorSpace` (bit 7) requests the sRGB
-    /// variant of the format, `m_Castable` (bit 6) creates the resource in the typeless
-    /// equivalent of the format so views may reinterpret it, `m_UnorderedAccess` (bit 8) adds a
-    /// UAV bind and creates the unordered-access view, and `m_MipLevelClamp` (bits 9-12)
-    /// becomes the view's most-detailed mip.
+    /// [`Create2DTexture`](crate::graphics_engine::surface::Create2DTexture) reads four of them on D3D11: `m_ColorSpace` requests the sRGB variant
+    /// of the format, `m_Castable` creates the resource in the typeless equivalent of the format
+    /// so views may reinterpret it, `m_UnorderedAccess` adds a UAV bind and creates the
+    /// unordered-access view, and `m_MipLevelClamp` becomes the view's most-detailed mip.
     pub m_Flags: u32,
     /// The allocation tag: `Group:6`, `Pool:1`, `Asset:1` from the low bit up.
     pub m_Tag: u8,
@@ -75,9 +74,10 @@ pub struct CreateRenderSetupParams {
     /// The colour-write mask stored on the setup.
     pub m_Mask: u32,
     /// A packed bitfield, from the low bit up: `m_AutoResolve:1`, `m_EDRAMLayout:2`,
-    /// `m_UAVStart:4`. [`CreateRenderSetup`](crate::graphics_engine::surface::CreateRenderSetup) reads `m_UAVStart` (bits 3-6) as the register slot
-    /// the unordered-access views start at; the sentinel `15` means "immediately after the
-    /// colour targets", and is replaced by the derived colour-target count.
+    /// `m_UAVStart:4`. [`CreateRenderSetup`](crate::graphics_engine::surface::CreateRenderSetup) reads `m_UAVStart` as the register slot the
+    /// unordered-access views start at; the sentinel
+    /// [`UAV_START_AFTER_COLOR_TARGETS`](crate::graphics_engine::surface::CreateRenderSetupParams::UAV_START_AFTER_COLOR_TARGETS) is replaced by the
+    /// derived colour-target count.
     pub m_Flags: u32,
     /// The EDRAM base on the console backends; ignored on D3D11.
     pub m_Base: u16,
@@ -93,6 +93,22 @@ fn _CreateRenderSetupParams_size_check() {
     unreachable!()
 }
 impl CreateRenderSetupParams {}
+impl CreateRenderSetupParams {
+    /// The [`m_Flags`](crate::graphics_engine::surface::CreateRenderSetupParams::m_Flags) value
+    /// [`CreateRenderSetups`](crate::graphics_engine::graphics_engine::GraphicsEngine::CreateRenderSetups)
+    /// passes for its setups, including both back-buffer setups: it sets `m_AutoResolve`, leaves
+    /// `m_EDRAMLayout` clear, and sets `m_UAVStart` to
+    /// [`UAV_START_AFTER_COLOR_TARGETS`](crate::graphics_engine::surface::CreateRenderSetupParams::UAV_START_AFTER_COLOR_TARGETS).
+    pub const DEFAULT_FLAGS: u32 = 121;
+    /// The [`m_Mask`](crate::graphics_engine::surface::CreateRenderSetupParams::m_Mask) value enabling writes to all four colour channels, which
+    /// [`CreateRenderSetups`](crate::graphics_engine::graphics_engine::GraphicsEngine::CreateRenderSetups)
+    /// passes for its setups.
+    pub const MASK_ALL_CHANNELS: u32 = 15;
+    /// The `m_UAVStart` value in [`m_Flags`](crate::graphics_engine::surface::CreateRenderSetupParams::m_Flags) that [`CreateRenderSetup`](crate::graphics_engine::surface::CreateRenderSetup) replaces
+    /// with the derived colour-target count, so the unordered-access views start immediately
+    /// after the colour targets.
+    pub const UAV_START_AFTER_COLOR_TARGETS: u32 = 15;
+}
 impl std::convert::AsRef<CreateRenderSetupParams> for CreateRenderSetupParams {
     fn as_ref(&self) -> &CreateRenderSetupParams {
         self
@@ -192,7 +208,7 @@ fn _PoolType_size_check() {
 /// A texture/surface pixel format. The values are the `DXGI_FORMAT` codes the backend passes
 /// straight to D3D11 (so [`ABGR32`](crate::graphics_engine::surface::SurfaceFormat::ABGR32) is `DXGI_FORMAT_R8G8B8A8_UNORM`), with a handful
 /// of platform-independent names above [`ARGB32`](crate::graphics_engine::surface::SurfaceFormat::ARGB32) for formats D3D11 has no direct
-/// equivalent for. `Unknown` (0) means "take the format from the source data".
+/// equivalent for. `Unknown` means "take the format from the source data".
 ///
 /// The engine's enumeration carries many aliases that resolve to the same code (`RGBA32`,
 /// `BGRA32`, and `FB_A8R8G8B8` all share [`ABGR32`](crate::graphics_engine::surface::SurfaceFormat::ABGR32)'s code); only one name per
@@ -394,7 +410,7 @@ pub unsafe fn DestroySurface(
 pub const CreateRenderSetup_ADDRESS: usize = 0x1419545F0;
 /// Creates a render setup, the render-target configuration a pass binds with
 /// [`SetRenderSetup`](crate::graphics_engine::graphics_engine::SetRenderSetup): it allocates the
-/// `0xF8`-byte setup, copies the depth target and the three eight-entry target/UAV arrays
+/// setup, copies the depth target and the three target/UAV arrays
 /// verbatim, and derives each array's count by scanning for the first null. It reads no width or
 /// height — the setup's dimensions come entirely from its bound targets, which is why
 /// `SetRenderSetup` can synthesize a full-target viewport from them.

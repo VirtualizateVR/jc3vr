@@ -53,8 +53,8 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&DRAW_BINDER)
         .with_static_binder(&DRAW_INSTANCED_BINDER)
         .with_static_binder(&DRAW_INDEXED_INSTANCED_BINDER)
-        .with_static_binder(&DRAW_INSTANCED_INDIRECT_BINDER)
-        .with_static_binder(&DRAW_INDEXED_INSTANCED_INDIRECT_BINDER)
+        .with_static_binder(&DRAW_INDEXED_INSTANCED_INDIRECT_NO_MUTEX_BINDER)
+        .with_static_binder(&DRAW_INDEXED_INSTANCED_MULTI_INDIRECT_BINDER)
         .with_static_binder(&DISPATCH_BINDER)
         .with_static_binder(&DISPATCH_INDIRECT_BINDER)
         .with_static_binder(&SET_RENDER_SETUP_BINDER)
@@ -87,8 +87,8 @@ fn draw(ctx: *mut c_void, prim: i32, arg2: i32, arg3: i32) {
 
 // The six below forward opaque args transparently -- see the module doc and draw.pyxis.
 
-#[detour(address = jc3gi::graphics_engine::draw::DrawInstanced_ADDRESS)]
-fn draw_instanced(
+#[detour(address = jc3gi::graphics_engine::draw::DrawIndexedInstancedIndirectNoMutex_ADDRESS)]
+fn draw_indexed_instanced_indirect_no_mutex(
     a1: *mut c_void,
     a2: *mut c_void,
     a3: *mut c_void,
@@ -96,8 +96,11 @@ fn draw_instanced(
     a5: *mut c_void,
     a6: *mut c_void,
 ) {
-    bump_draw();
-    DRAW_INSTANCED.get().unwrap().call(a1, a2, a3, a4, a5, a6);
+    bump_indexed();
+    DRAW_INDEXED_INSTANCED_INDIRECT_NO_MUTEX
+        .get()
+        .unwrap()
+        .call(a1, a2, a3, a4, a5, a6);
 }
 
 #[detour(address = jc3gi::graphics_engine::draw::DrawIndexedInstanced_ADDRESS)]
@@ -116,8 +119,8 @@ fn draw_indexed_instanced(
         .call(a1, a2, a3, a4, a5, a6);
 }
 
-#[detour(address = jc3gi::graphics_engine::draw::DrawInstancedIndirect_ADDRESS)]
-fn draw_instanced_indirect(
+#[detour(address = jc3gi::graphics_engine::draw::DrawInstanced_ADDRESS)]
+fn draw_instanced(
     a1: *mut c_void,
     a2: *mut c_void,
     a3: *mut c_void,
@@ -126,14 +129,11 @@ fn draw_instanced_indirect(
     a6: *mut c_void,
 ) {
     bump_draw();
-    DRAW_INSTANCED_INDIRECT
-        .get()
-        .unwrap()
-        .call(a1, a2, a3, a4, a5, a6);
+    DRAW_INSTANCED.get().unwrap().call(a1, a2, a3, a4, a5, a6);
 }
 
-#[detour(address = jc3gi::graphics_engine::draw::DrawIndexedInstancedIndirect_ADDRESS)]
-fn draw_indexed_instanced_indirect(
+#[detour(address = jc3gi::graphics_engine::draw::DrawIndexedInstancedMultiIndirect_ADDRESS)]
+fn draw_indexed_instanced_multi_indirect(
     a1: *mut c_void,
     a2: *mut c_void,
     a3: *mut c_void,
@@ -142,7 +142,7 @@ fn draw_indexed_instanced_indirect(
     a6: *mut c_void,
 ) {
     bump_indexed();
-    DRAW_INDEXED_INSTANCED_INDIRECT
+    DRAW_INDEXED_INSTANCED_MULTI_INDIRECT
         .get()
         .unwrap()
         .call(a1, a2, a3, a4, a5, a6);

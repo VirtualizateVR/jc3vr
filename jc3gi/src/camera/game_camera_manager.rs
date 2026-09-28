@@ -141,6 +141,39 @@ impl GameCameraManager {
             f(self as *mut Self as _, dt, dtf, blend)
         }
     }
+    pub const AddHint_ADDRESS: usize = 0x1407AE2F0;
+    /// Adds a reference to camera hint `hint` in the manager's hint table (a hash of hint id to
+    /// reference count), inserting it with a count of one if absent. Camera states read the table
+    /// to select hinted behaviour. `debug_name` is unused.
+    pub unsafe fn AddHint(&mut self, hint: u32, debug_name: *const u8) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                hint: u32,
+                debug_name: *const u8,
+            ) = ::std::mem::transmute(Self::AddHint_ADDRESS);
+            f(self as *mut Self as _, hint, debug_name)
+        }
+    }
+    pub const ResetCamera_ADDRESS: usize = 0x14077BCE0;
+    /// Resets the camera control context, the camera director, and the camera tree; when
+    /// `transform` is non-null, also initializes the camera manager's transform to it and stores it
+    /// as the reset transform. Called on player teleports.
+    pub unsafe fn ResetCamera(&mut self, transform: *const crate::types::math::Matrix4) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                transform: *const crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::ResetCamera_ADDRESS);
+            f(self as *mut Self as _, transform)
+        }
+    }
+}
+impl GameCameraManager {
+    /// The camera hint `CPlayer::SetAimMode` adds through [`AddHint`](crate::camera::game_camera_manager::GameCameraManager::AddHint) on entering
+    /// precision aim ([`AIM_PRECISION`](crate::aim::aim::AimMode::AIM_PRECISION)) and removes on leaving it; the zoom lives in the camera state
+    /// that reacts to the hint.
+    pub const PRECISION_AIM_HINT_ID: u32 = 1403927093;
 }
 impl std::convert::AsRef<GameCameraManager> for GameCameraManager {
     fn as_ref(&self) -> &GameCameraManager {

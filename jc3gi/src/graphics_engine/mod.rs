@@ -1,14 +1,18 @@
 #![cfg_attr(any(), rustfmt::skip)]
+pub mod bfbc;
 pub mod device;
 pub mod draw;
 pub mod gi;
+pub mod gpu_profiler;
 pub mod graphics_engine;
 pub mod light_manager;
+pub mod model_instance;
 pub mod post_effects;
 pub mod render_block;
 pub mod render_engine;
 pub mod render_pass;
 pub mod shadow_manager;
+pub mod skinning_palette;
 pub mod ssao;
 pub mod surface;
 pub mod texture;

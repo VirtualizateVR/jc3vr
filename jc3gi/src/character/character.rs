@@ -1,16 +1,36 @@
 #![cfg_attr(any(), rustfmt::skip)]
 crate::__bitflags! {
-    #[doc = " The character's aiming state, written each frame by"] #[doc =
-    " [`HandleAimingInputPlayer`](crate::character::character::Character::HandleAimingInputPlayer) for the player. The locomotion"]
     #[doc =
-    " state machine reads it to choose aim-relative (strafe) movement over run/steer:"]
+    " A byte of `CCharacter` bitfields that enable traversal abilities, each written by its own"]
+    #[doc = " setter. `CGameWorld::TeleportPlayerInstant` sets"] #[doc =
+    " [`m_IsStuntAutoExitEnabled`](crate::character::character::AbilityFlags::m_IsStuntAutoExitEnabled) on the player character as part of"]
+    #[doc = " the teleport."] pub struct AbilityFlags : u8 { const m_IsParachuteEnabled =
+    1usize as _; const m_IsWingsuitEnabled = 2usize as _; const m_IsStuntAutoExitEnabled
+    = 4usize as _; }
+}
+fn _AbilityFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], AbilityFlags>([0u8; 0x1]);
+    }
+    unreachable!()
+}
+crate::__bitflags! {
     #[doc =
-    " `m_AimingWeapon` (or `m_AimingGrapple`) is the switch that makes the body face the aim direction"]
+    " The character's packed aiming and presentation bit-flags (one byte of `CCharacter` bitfields)."]
     #[doc =
-    " and turns the directional keys into strafes. `m_WasAiming` reflects the state as of the start of"]
-    #[doc = " this frame. Bits `0x01`/`0x02` and `0x40`/`0x80` are unmapped."] pub struct
-    AimState : u8 { const m_AimingEnabled = 4usize as _; const m_AimingWeapon = 8usize as
-    _; const m_AimingGrapple = 16usize as _; const m_WasAiming = 32usize as _; }
+    " [`HandleAimingInputPlayer`](crate::character::character::Character::HandleAimingInputPlayer) writes the aim bits each frame for"]
+    #[doc =
+    " the player; the locomotion state machine reads them to choose aim-relative (strafe) movement over"]
+    #[doc =
+    " run/steer: `m_AimingWeapon` (or `m_AimingGrapple`) is the switch that makes the body face the aim"]
+    #[doc =
+    " direction and turns the directional keys into strafes. `m_WasAiming` reflects the state as of the"]
+    #[doc =
+    " start of this frame. The other bits are unrelated flags that share the byte."] pub
+    struct AimState : u8 { const m_WasVisible = 1usize as _; const m_UseFinalTransparency
+    = 2usize as _; const m_AimingEnabled = 4usize as _; const m_AimingWeapon = 8usize as
+    _; const m_AimingGrapple = 16usize as _; const m_WasAiming = 32usize as _; const
+    m_GodModeSequence = 64usize as _; const m_InCargoBay = 128usize as _; }
 }
 fn _AimState_size_check() {
     unsafe {
@@ -28,7 +48,12 @@ pub struct AnimatedModel {
     >,
     _field_b8: [u8; 192],
     pub m_AnimationController: *mut crate::character::character::AnimationController,
-    _field_180: [u8; 128],
+    _field_180: [u8; 88],
+    /// The model's animation instance data (`SAnimatedModelInstanceData*`), null until the animation
+    /// instance is created (the first frames after spawn or stream-in). Some character-state
+    /// predicates, [`Character::IsUsingWingsuit`](crate::character::character::Character::IsUsingWingsuit) among them, report false while it is null.
+    pub m_InstanceData: *mut u8,
+    _field_1e0: [u8; 32],
     /// The model-instance slots (`NModelSystem::CModelInstance*`, null when unused): the base
     /// body model plus attachments and variants. `CAnimatedModel::GetModel`/`SetModel` index this
     /// array directly. Each instance embeds its render-block-instance info (`CRBIInfo`) at
@@ -45,8 +70,8 @@ fn _AnimatedModel_size_check() {
 impl AnimatedModel {
     pub const TryAct_ADDRESS: usize = 0x1404B2E00;
     /// Tests whether the animation state machine would accept the act from its current state,
-    /// without queuing it. `CCharacter`'s vtable slot 37 forwards to this on
-    /// [`Character::m_AnimatedModel`](crate::character::character::Character::m_AnimatedModel); the game's own act dispatchers call it before
+    /// without queuing it. A `CCharacter` virtual forwards to this on
+    /// [`Character::m_AnimatedModel`](crate::character::character::Character::m_AnimatedModel); the game's act dispatchers call it before
     /// [`Character::QueueAct`](crate::character::character::Character::QueueAct) to pick a supported act.
     pub unsafe fn TryAct(&mut self, act: *const u32) -> bool {
         unsafe {
@@ -181,6 +206,27 @@ impl AnimationController {
             f(self as *mut Self as _, dt, num_of_bones)
         }
     }
+    pub const UpdateSkinning_ADDRESS: usize = 0x14043FCA0;
+    /// The render-phase skinning update (`CAnimationControl::UpdateSkinning`): hands the pose
+    /// producer's skinning job to
+    /// [`PoseProducer::MakeSkinningPalette`](crate::animation::pose_producer::PoseProducer::MakeSkinningPalette)
+    /// with `dtf` and the current frame's palette buffer (the control double-buffers its palettes by
+    /// frame parity). `world_matrix` is unused in this build. `CCharacter::UpdateRender` calls it
+    /// (the character-level `UpdateSkinning` is inlined there).
+    pub unsafe fn UpdateSkinning(
+        &mut self,
+        dtf: f32,
+        world_matrix: *mut crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dtf: f32,
+                world_matrix: *mut crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::UpdateSkinning_ADDRESS);
+            f(self as *mut Self as _, dtf, world_matrix)
+        }
+    }
 }
 impl std::convert::AsRef<AnimationController> for AnimationController {
     fn as_ref(&self) -> &AnimationController {
@@ -194,10 +240,16 @@ impl std::convert::AsMut<AnimationController> for AnimationController {
 }
 #[repr(C, align(8))]
 pub struct Character {
-    _field_0: [u8; 2432],
+    vftable: *const crate::character::character::CharacterVftable,
+    _field_8: [u8; 2352],
+    /// The character's aiming-settings resource (`TResourceCachePtr<SCharacterAimingSettings>`, a
+    /// resource handle resolved through the resource cache). `HandleAimingInputNPC` reads the
+    /// aim-timer refill value from the resolved settings.
+    pub m_AimingSettings: *mut u8,
+    _field_940: [u8; 64],
     /// The character's embedded equipment inventory.
     pub m_Inventory: crate::character::inventory::Inventory,
-    _field_a50: [u8; 1680],
+    _field_d68: [u8; 888],
     /// The character's embedded HumanIK solver. Driven each frame in
     /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel), after the
     /// animation graph finalizes the local pose and before the model-space pose is computed. See
@@ -211,8 +263,8 @@ pub struct Character {
     pub m_PfxCharacter: crate::types::shared_ptr::SharedPtr<
         crate::physics::PfxCharacterInstance,
     >,
-    /// The character's embedded [`ObjectBlackboard`](crate::blackboard::ObjectBlackboard) (`lea rcx, [character+2060h]` at every
-    /// blackboard call site in the loco tasks).
+    /// The character's embedded [`ObjectBlackboard`](crate::blackboard::ObjectBlackboard). The loco tasks' blackboard call sites address
+    /// it in place on the character.
     pub m_Blackboard: crate::blackboard::ObjectBlackboard,
     _field_2090: [u8; 89],
     /// Packed damage-state bit-flags; see [`DamageStateFlags`](crate::character::character::DamageStateFlags).
@@ -229,18 +281,51 @@ pub struct Character {
     /// How the character's motion is integrated this frame (`CCharacter::EMotionState`), read by
     /// the dispatch in `CCharacter::UpdateIntegratingPhysics`. Each movement actuator sets it as
     /// part of its per-frame update. Left as a raw integer because only a few of its ~25 values have
-    /// been confirmed against the release build: `MOTION_STATE_SWIMMING` and `MOTION_STATE_RAGDOLL`
+    /// been confirmed: `MOTION_STATE_SWIMMING` and `MOTION_STATE_RAGDOLL`
     /// on this type.
     pub m_CurrentMotionState: u32,
     _field_2498: [u8; 402],
     pub m_IsLocalCharacter: bool,
-    _field_262b: [u8; 353],
+    _field_262b: [u8; 145],
+    /// The world-space point the character's weapons aim at, written each frame by
+    /// [`UpdateWeaponAiming`](crate::character::character::Character::UpdateWeaponAiming) (for the player, from the aim control's
+    /// weapon aim point). The weapons read it as their fire target.
+    pub m_AimTargetPositionWeapons: crate::types::math::Vector3,
+    /// The world-space point thrown grenades aim at, written by
+    /// [`UpdateGrenadeAiming`](crate::character::character::Character::UpdateGrenadeAiming).
+    pub m_AimTargetPositionGrenade: crate::types::math::Vector3,
+    /// The per-frame weapon input values (fire, precision aim, plant, and the rest), cleared by
+    /// [`UpdateWeapons_Parallel`](crate::character::character::Character::UpdateWeapons_Parallel) after the inventory consumes them.
+    pub m_WeaponInputs: [f32; 16],
+    /// Set by [`UpdateWeaponAiming`](crate::character::character::Character::UpdateWeaponAiming) and cleared by
+    /// [`UpdateWeapons_Parallel`](crate::character::character::Character::UpdateWeapons_Parallel): whether the weapon aim target was
+    /// supplied this frame.
+    pub m_AimTargetPositionWeaponWasSetThisFrame: bool,
+    _field_2715: [u8; 3],
+    /// The character's animation control parameters, which own the character state-bitflag words
+    /// ([`ControlParameters::m_UserVM`](crate::character::control_parameters::ControlParameters::m_UserVM)). Almost every one-bit "what is the character doing"
+    /// predicate on this type reads through this pointer.
+    pub m_ControlParameters: *mut crate::character::control_parameters::ControlParameters,
+    _field_2720: [u8; 108],
     /// Per-character LOD/update-gating flags; see [`CharacterLodFlags`](crate::character::character::CharacterLodFlags).
     pub m_LodFlags: crate::character::character::CharacterLodFlags,
-    _field_278d: [u8; 99],
+    _field_278d: [u8; 27],
+    /// The inventory slot of the weapon the character has selected.
+    pub m_SelectedWeaponSlot: crate::character::inventory::WeaponSlot,
+    _field_27ac: [u8; 68],
     pub m_WorldMatrixT0: crate::types::math::Matrix4,
     pub m_WorldMatrixT1: crate::types::math::Matrix4,
-    _field_2870: [u8; 352],
+    _field_2870: [u8; 196],
+    /// The orientation the character is turning toward (`CQuaternion`, `x, y, z, w`).
+    /// [`SetOrientation`](crate::character::character::Character::SetOrientation) writes the rotation into
+    /// [`m_WorldMatrixT1`](crate::character::character::Character::m_WorldMatrixT1) and stores the same quaternion here.
+    pub m_RotationGoal: [f32; 4],
+    _field_2944: [u8; 108],
+    /// The character's avatar (`CAvatar`), the controller that drives it. For the player it is the
+    /// [`Avatar`](crate::character::avatar::Avatar) base of the `CPlayer`. Holds the mental state written by
+    /// [`SetMentalState`](crate::character::character::Character::SetMentalState).
+    pub m_Avatar: *mut crate::character::avatar::Avatar,
+    _field_29b8: [u8; 24],
     /// Whether this character is a player character (local or remote). Gates the player-only
     /// side effects of setters such as [`SetUnlimitedAmmo`](crate::character::character::Character::SetUnlimitedAmmo).
     pub m_IsPlayer: bool,
@@ -251,7 +336,10 @@ pub struct Character {
     /// so the character stays in aim/strafe locomotion for a short tail after the aim button is
     /// released.
     pub m_AimTimer: f32,
-    _field_2a04: [u8; 428],
+    _field_2a04: [u8; 260],
+    /// The traversal-ability enable bits; see [`AbilityFlags`](crate::character::character::AbilityFlags).
+    pub m_AbilityFlags: crate::character::character::AbilityFlags,
+    _field_2b09: [u8; 167],
     /// The idle-variation countdown, in seconds, driven by
     /// [`NStateTask_InputLocoIdleTask::Update`](crate::input::locomotion::NStateTask_InputLocoIdleTask::Update):
     /// while the character stands idle it is decremented by the frame delta, and once it goes
@@ -272,6 +360,9 @@ fn _Character_size_check() {
     unreachable!()
 }
 impl Character {
+    pub fn vftable(&self) -> *const crate::character::character::CharacterVftable {
+        self.vftable as *const crate::character::character::CharacterVftable
+    }
     pub const GetLocalPlayerCharacter_ADDRESS: usize = 0x1407D5B00;
     pub unsafe fn GetLocalPlayerCharacter() -> *mut crate::character::character::Character {
         unsafe {
@@ -284,7 +375,7 @@ impl Character {
     pub const IsInVehicleAttachState_ADDRESS: usize = 0x14077F080;
     /// Whether the character is attached to a vehicle (riding, or in the mount/dismount
     /// transitions), read from the animation rule system's current state. The state machine
-    /// pointers it walks are game-thread data; call on the game update thread.
+    /// pointers it walks are game-thread data, so the call is only safe on the game update thread.
     pub unsafe fn IsInVehicleAttachState(&self) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
@@ -457,8 +548,579 @@ impl Character {
             f(self as *mut Self as _, act)
         }
     }
+    pub const IsUsingWingsuit_ADDRESS: usize = 0x14075F630;
+    /// Whether the character is flying the wingsuit:
+    /// [`SB_IS_WINGSUIT`](crate::state::StateBitFlag::SB_IS_WINGSUIT), and only
+    /// once [`AnimatedModel::m_InstanceData`](crate::character::character::AnimatedModel::m_InstanceData) exists (false before the animation instance is created).
+    pub unsafe fn IsUsingWingsuit(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsUsingWingsuit_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsUsingParachute_ADDRESS: usize = 0x14075F550;
+    /// Whether the parachute is deployed:
+    /// [`SB_IS_PARACHUTING`](crate::state::StateBitFlag::SB_IS_PARACHUTING).
+    pub unsafe fn IsUsingParachute(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsUsingParachute_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsFreefalling_ADDRESS: usize = 0x14075F570;
+    /// Whether the character is in free fall:
+    /// [`SB_IS_FREE_FALLING`](crate::state::StateBitFlag::SB_IS_FREE_FALLING).
+    pub unsafe fn IsFreefalling(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsFreefalling_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsFastfalling_ADDRESS: usize = 0x14075F910;
+    /// Whether the character is in a fast (dive) fall:
+    /// [`SB_IS_FASTFALLING`](crate::state::StateBitFlag::SB_IS_FASTFALLING).
+    pub unsafe fn IsFastfalling(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsFastfalling_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsReelingIn_ADDRESS: usize = 0x14075F530;
+    /// Whether a grapple reel-in traversal is in progress:
+    /// [`SB_IN_REELING_IN`](crate::state::StateBitFlag::SB_IN_REELING_IN).
+    pub unsafe fn IsReelingIn(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsReelingIn_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsRidingMC_ADDRESS: usize = 0x14075F380;
+    /// Whether the character is riding a motorcycle:
+    /// [`SB_IS_RIDING_MOTORBIKE`](crate::state::StateBitFlag::SB_IS_RIDING_MOTORBIKE).
+    pub unsafe fn IsRidingMC(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsRidingMC_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsSwimming_ADDRESS: usize = 0x14075F450;
+    /// Whether the character is swimming (surface or underwater):
+    /// [`SB_IS_SWIMMING`](crate::state::StateBitFlag::SB_IS_SWIMMING).
+    pub unsafe fn IsSwimming(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsSwimming_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsUnderwaterSwimming_ADDRESS: usize = 0x14075F470;
+    /// Whether the character is swimming underwater:
+    /// [`SB_IS_UW_SWIMMING`](crate::state::StateBitFlag::SB_IS_UW_SWIMMING).
+    pub unsafe fn IsUnderwaterSwimming(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsUnderwaterSwimming_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsInAttachedToParachute_ADDRESS: usize = 0x14075F7C0;
+    /// Whether the character hangs from a vehicle-attached parachute:
+    /// [`SB_IN_ATTACHED_TO_PARACHUTE`](crate::state::StateBitFlag::SB_IN_ATTACHED_TO_PARACHUTE).
+    pub unsafe fn IsInAttachedToParachute(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsInAttachedToParachute_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsPreReelingIn_ADDRESS: usize = 0x14075F770;
+    /// Whether the character is in the reel-in wind-up:
+    /// [`SB_IN_PRE_REEL`](crate::state::StateBitFlag::SB_IN_PRE_REEL).
+    pub unsafe fn IsPreReelingIn(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsPreReelingIn_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsPreHang_ADDRESS: usize = 0x14075F790;
+    /// Whether the character is in the wind-up to a grapple hang:
+    /// [`SB_IN_PRE_HANG`](crate::state::StateBitFlag::SB_IN_PRE_HANG).
+    pub unsafe fn IsPreHang(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsPreHang_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsInRidingInVehicleState_ADDRESS: usize = 0x14077EA60;
+    /// Whether the character is seated and riding a vehicle:
+    /// [`SB_IS_RIDING_MOTORBIKE`](crate::state::StateBitFlag::SB_IS_RIDING_MOTORBIKE),
+    /// or the body rule system's current state is one of eight riding states (idle, driver,
+    /// passenger, and reverse variants). Reads game-thread animation state.
+    pub unsafe fn IsInRidingInVehicleState(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsInRidingInVehicleState_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsInDrivingVehicleState_ADDRESS: usize = 0x14077EAF0;
+    /// Whether the character is in a driver-seat driving state:
+    /// [`SB_IS_RIDING_MOTORBIKE`](crate::state::StateBitFlag::SB_IS_RIDING_MOTORBIKE),
+    /// or the body rule system's current state is one of four driving states. Reads game-thread
+    /// animation state.
+    pub unsafe fn IsInDrivingVehicleState(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsInDrivingVehicleState_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsReeledIn_ADDRESS: usize = 0x14077ED10;
+    /// Whether the character is reeled onto an attach point: the grappling hook's state is one of
+    /// the reeled states
+    /// ([`GHS_REELED_ATTACHED`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_ATTACHED),
+    /// [`GHS_REELED_HANG`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_HANG),
+    /// [`GHS_REELED_UPSIDEDOWN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_UPSIDEDOWN),
+    /// or [`GHS_REELED_STUNT`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_STUNT)),
+    /// and either
+    /// [`SB_IN_GRAPPLE_ATTACHED`](crate::state::StateBitFlag::SB_IN_GRAPPLE_ATTACHED)
+    /// or [`SB_IS_GRAPPLE_UPSIDEDOWN`](crate::state::StateBitFlag::SB_IS_GRAPPLE_UPSIDEDOWN)
+    /// is set or the body rule system is in one of eight reeled-in stunt and hang states.
+    pub unsafe fn IsReeledIn(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsReeledIn_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsGrappleHanging_ADDRESS: usize = 0x14079E290;
+    /// Whether the character hangs from a reeled grapple: with a hook present, the body rule
+    /// system is in `S_GRAPPLE_HANG` or `S_IDLE_HANG_STUNT`, the hook's state is
+    /// [`GHS_REELED_HANG`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_HANG), or
+    /// [`SB_IS_GRAPPLE_UPSIDEDOWN`](crate::state::StateBitFlag::SB_IS_GRAPPLE_UPSIDEDOWN)
+    /// is set.
+    pub unsafe fn IsGrappleHanging(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsGrappleHanging_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsStuntTraversing_ADDRESS: usize = 0x14077EF60;
+    /// Whether the body rule system is in one of the four stunt-position traversal states
+    /// (`S_STUNT_FWD`, `S_STUNT_RIGHT`, `S_STUNT_LEFT`, `S_STUNT_BWD`).
+    pub unsafe fn IsStuntTraversing(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsStuntTraversing_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsInMountedGunState_ADDRESS: usize = 0x1407B0F60;
+    /// Whether the character mans a mounted gun: the weapon in the
+    /// [`E_SLOT_HEAVY`](crate::character::inventory::WeaponSlot::E_SLOT_HEAVY) slot is in its mounted weapon state.
+    pub unsafe fn IsInMountedGunState(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsInMountedGunState_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetVehicle_ADDRESS: usize = 0x1407D5D90;
+    /// Fills `out` with the vehicle the character is attached to, found by walking the interaction
+    /// graph's top root object and casting it to `CVehicle`; empty when there is none. Takes a
+    /// reference on the vehicle.
+    pub unsafe fn GetVehicle(
+        &self,
+        out: *mut crate::types::shared_ptr::SharedPtr<crate::vehicle::vehicle::Vehicle>,
+    ) -> *mut crate::types::shared_ptr::SharedPtr<crate::vehicle::vehicle::Vehicle> {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                out: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::vehicle::vehicle::Vehicle,
+                >,
+            ) -> *mut crate::types::shared_ptr::SharedPtr<
+                crate::vehicle::vehicle::Vehicle,
+            > = ::std::mem::transmute(Self::GetVehicle_ADDRESS);
+            f(self as *const Self as _, out)
+        }
+    }
+    pub const GetVehiclePtr_ADDRESS: usize = 0x1407D5E30;
+    /// The raw-pointer form of [`GetVehicle`](crate::character::character::Character::GetVehicle); still takes and releases a
+    /// reference internally.
+    pub unsafe fn GetVehiclePtr(&self) -> *mut crate::vehicle::vehicle::Vehicle {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *mut crate::vehicle::vehicle::Vehicle = ::std::mem::transmute(
+                Self::GetVehiclePtr_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsAttachedToVehicle_ADDRESS: usize = 0x1407D5EA0;
+    /// Whether the character is attached to any vehicle through the interaction graph.
+    pub unsafe fn IsAttachedToVehicle(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsAttachedToVehicle_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsAttachedToLandVehicle_ADDRESS: usize = 0x1407D5FA0;
+    /// Whether the attached vehicle is a `CLandVehicle` (cars and motorcycles), by RTTI `IsType`.
+    pub unsafe fn IsAttachedToLandVehicle(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsAttachedToLandVehicle_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsAttachedToAirVehicle_ADDRESS: usize = 0x1407D6060;
+    /// Whether the attached vehicle is a `CAirVehicle` (planes and helicopters), by RTTI `IsType`.
+    pub unsafe fn IsAttachedToAirVehicle(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsAttachedToAirVehicle_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsAttachedToSeaVehicle_ADDRESS: usize = 0x1407D6120;
+    /// Whether the attached vehicle is a `CSeaVehicle` (boats and jetskis), by RTTI `IsType`.
+    pub unsafe fn IsAttachedToSeaVehicle(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsAttachedToSeaVehicle_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsAttachedToHelicopter_ADDRESS: usize = 0x1407D61E0;
+    /// Whether the attached vehicle is a `CHelicopter`, by RTTI `IsType`.
+    pub unsafe fn IsAttachedToHelicopter(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsAttachedToHelicopter_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsAttachedToMech_ADDRESS: usize = 0x1407D62A0;
+    /// Whether the attached vehicle is a mech ([`Vehicle::IsMech`](crate::vehicle::vehicle::Vehicle::IsMech)).
+    pub unsafe fn IsAttachedToMech(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsAttachedToMech_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const UpdateWeaponAiming_ADDRESS: usize = 0x1407602C0;
+    /// Stores `target` in [`m_AimTargetPositionWeapons`](crate::character::character::Character::m_AimTargetPositionWeapons) and
+    /// sets [`m_AimTargetPositionWeaponWasSetThisFrame`](crate::character::character::Character::m_AimTargetPositionWeaponWasSetThisFrame).
+    pub unsafe fn UpdateWeaponAiming(
+        &mut self,
+        target: *const crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                target: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::UpdateWeaponAiming_ADDRESS);
+            f(self as *mut Self as _, target)
+        }
+    }
+    pub const UpdateGrenadeAiming_ADDRESS: usize = 0x1407602F0;
+    /// Stores `target` in [`m_AimTargetPositionGrenade`](crate::character::character::Character::m_AimTargetPositionGrenade).
+    pub unsafe fn UpdateGrenadeAiming(
+        &mut self,
+        target: *const crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                target: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::UpdateGrenadeAiming_ADDRESS);
+            f(self as *mut Self as _, target)
+        }
+    }
+    pub const UpdateWeapons_Parallel_ADDRESS: usize = 0x140760660;
+    /// Runs the inventory's parallel weapon update
+    /// ([`Inventory::Update_Parallel`](crate::character::inventory::Inventory::Update_Parallel)) with the
+    /// weapon and grenade aim targets, then clears [`m_WeaponInputs`](crate::character::character::Character::m_WeaponInputs) and
+    /// the aim-target-set flag.
+    pub unsafe fn UpdateWeapons_Parallel(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::UpdateWeapons_Parallel_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+    pub const CanPrecisionAim_ADDRESS: usize = 0x1407D9200;
+    /// Whether the equipped weapon and the character state allow precision (down-sights) aiming.
+    pub unsafe fn CanPrecisionAim(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::CanPrecisionAim_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const HandleAimingInputNPC_ADDRESS: usize = 0x1407F0160;
+    /// The per-frame aiming-input update for non-player characters: refreshes and counts down
+    /// [`m_AimTimer`](crate::character::character::Character::m_AimTimer) (the refill value comes from
+    /// [`m_AimingSettings`](crate::character::character::Character::m_AimingSettings)), writes the weapon-aim bit of
+    /// [`m_AimFlags`](crate::character::character::Character::m_AimFlags), mirrors it into
+    /// [`SB_IS_AIMING_WPN_OR_GRPL`](crate::state::StateBitFlag::SB_IS_AIMING_WPN_OR_GRPL),
+    /// and queues the matching aim-transition act.
+    pub unsafe fn HandleAimingInputNPC(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::HandleAimingInputNPC_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+    pub const PreSimUpdateGrapple_ADDRESS: usize = 0x14079D420;
+    /// The pre-simulation grapple update: runs the hook's own pre-sim update and recomputes the
+    /// grapple-aim bit of [`m_AimFlags`](crate::character::character::Character::m_AimFlags).
+    pub unsafe fn PreSimUpdateGrapple(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::PreSimUpdateGrapple_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+    pub const IsTryingToAim_ADDRESS: usize = 0x1407F5140;
+    /// Whether the character is trying to aim (an aim input is active and aiming is permitted).
+    pub unsafe fn IsTryingToAim(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsTryingToAim_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsTryingToFireAnyWeapons_ADDRESS: usize = 0x1407F2AF0;
+    /// Whether any weapon fire input is active: fire, precision-aim fire, or explosive planting.
+    /// `ignore_animation` skips the inventory's animation-permission checks.
+    pub unsafe fn IsTryingToFireAnyWeapons(&self, ignore_animation: bool) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                ignore_animation: bool,
+            ) -> bool = ::std::mem::transmute(Self::IsTryingToFireAnyWeapons_ADDRESS);
+            f(self as *const Self as _, ignore_animation)
+        }
+    }
+    pub const HasAnyWeaponInput_ADDRESS: usize = 0x1407F2D10;
+    /// Whether any weapon input is active this frame.
+    pub unsafe fn HasAnyWeaponInput(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::HasAnyWeaponInput_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const SetMentalState_ADDRESS: usize = 0x140760BE0;
+    /// Sets the character's mental state on its [`m_Avatar`](crate::character::character::Character::m_Avatar) with a hold `timer`.
+    /// Unless `force` is set, the write happens only once the avatar's current timer has run out.
+    pub unsafe fn SetMentalState(
+        &mut self,
+        state: crate::character::avatar::MentalState,
+        force: bool,
+        timer: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                state: crate::character::avatar::MentalState,
+                force: bool,
+                timer: f32,
+            ) = ::std::mem::transmute(Self::SetMentalState_ADDRESS);
+            f(self as *mut Self as _, state, force, timer)
+        }
+    }
+    pub const DrawWeapon_ADDRESS: usize = 0x1407608A0;
+    /// Draws the selected weapon when the inventory's animation state allows it: selects a valid
+    /// weapon, queues the draw act, and blocks drawing and grenades until the animation re-enables
+    /// them.
+    pub unsafe fn DrawWeapon(&mut self, p1: bool, p2: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, p1: bool, p2: bool) = ::std::mem::transmute(
+                Self::DrawWeapon_ADDRESS,
+            );
+            f(self as *mut Self as _, p1, p2)
+        }
+    }
+    pub const HolsterWeapon_ADDRESS: usize = 0x1407F2D80;
+    /// Holsters the current weapon when the inventory's animation state allows it by queuing the
+    /// holster act.
+    pub unsafe fn HolsterWeapon(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::HolsterWeapon_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const ForceNeutralState_ADDRESS: usize = 0x1407FD120;
+    /// Forces the character's animation and control state back to neutral (on foot, idle).
+    pub unsafe fn ForceNeutralState(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ForceNeutralState_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetOrientation_ADDRESS: usize = 0x14075FD90;
+    /// Sets the character's orientation from a quaternion (`CQuaternion`, `x, y, z, w`): writes
+    /// the rotation into [`m_WorldMatrixT1`](crate::character::character::Character::m_WorldMatrixT1), keeping its translation, and
+    /// stores the quaternion in [`m_RotationGoal`](crate::character::character::Character::m_RotationGoal). A direct world-matrix
+    /// write; it does not go through the physics proxy.
+    pub unsafe fn SetOrientation(&mut self, orientation: *const [f32; 4]) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                orientation: *const [f32; 4],
+            ) = ::std::mem::transmute(Self::SetOrientation_ADDRESS);
+            f(self as *mut Self as _, orientation)
+        }
+    }
+    pub const SetYAlignedAttachTo_ADDRESS: usize = 0x14079D540;
+    /// Attaches the character to `target` with a yaw-only alignment: computes the yaw between the
+    /// character's and the target's forward directions and calls the
+    /// [`AttachTo`](crate::character::character::Character::AttachTo) virtual with that rotation as the offset.
+    pub unsafe fn SetYAlignedAttachTo(
+        &mut self,
+        target: *mut crate::types::math::Matrix4,
+        object: *mut ::std::ffi::c_void,
+        attach_type: u32,
+        flags: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                target: *mut crate::types::math::Matrix4,
+                object: *mut ::std::ffi::c_void,
+                attach_type: u32,
+                flags: u32,
+            ) = ::std::mem::transmute(Self::SetYAlignedAttachTo_ADDRESS);
+            f(self as *mut Self as _, target, object, attach_type, flags)
+        }
+    }
+    pub const IsInCargoBay_ADDRESS: usize = 0x14075AEB0;
+    /// Whether the character rides in a vehicle's cargo bay
+    /// ([`m_InCargoBay`](crate::character::character::AimState::m_InCargoBay)).
+    pub unsafe fn IsInCargoBay(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsInCargoBay_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const SetWeaponsEnabled_ADDRESS: usize = 0x140818810;
+    /// Sets [`WEAPONS_ENABLED`](crate::character::character::DamageStateFlags::WEAPONS_ENABLED).
+    pub unsafe fn SetWeaponsEnabled(&mut self, enable: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, enable: bool) = ::std::mem::transmute(
+                Self::SetWeaponsEnabled_ADDRESS,
+            );
+            f(self as *mut Self as _, enable)
+        }
+    }
+    pub const SetParachuteEnabled_ADDRESS: usize = 0x140818830;
+    /// Sets [`m_IsParachuteEnabled`](crate::character::character::AbilityFlags::m_IsParachuteEnabled).
+    pub unsafe fn SetParachuteEnabled(&mut self, enabled: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, enabled: bool) = ::std::mem::transmute(
+                Self::SetParachuteEnabled_ADDRESS,
+            );
+            f(self as *mut Self as _, enabled)
+        }
+    }
+    pub const SetWingsuitEnabled_ADDRESS: usize = 0x1408B8440;
+    /// Sets [`m_IsWingsuitEnabled`](crate::character::character::AbilityFlags::m_IsWingsuitEnabled).
+    pub unsafe fn SetWingsuitEnabled(&mut self, enabled: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, enabled: bool) = ::std::mem::transmute(
+                Self::SetWingsuitEnabled_ADDRESS,
+            );
+            f(self as *mut Self as _, enabled)
+        }
+    }
+    pub const SetStuntAutoExitEnabled_ADDRESS: usize = 0x1409AA6E0;
+    /// Sets [`m_IsStuntAutoExitEnabled`](crate::character::character::AbilityFlags::m_IsStuntAutoExitEnabled).
+    pub unsafe fn SetStuntAutoExitEnabled(&mut self, enabled: bool) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, enabled: bool) = ::std::mem::transmute(
+                Self::SetStuntAutoExitEnabled_ADDRESS,
+            );
+            f(self as *mut Self as _, enabled)
+        }
+    }
+    /// Attaches the character to a parent (`CCharacter::AttachTo`): `target` is the parent's
+    /// attach frame, `object` the parent object, `attach_type` a `CCharacter::AttachType`, and
+    /// `offset` the character's transform relative to the parent frame. While attached, the
+    /// character's world transform follows the parent instead of the physics proxy.
+    /// [`SetYAlignedAttachTo`](crate::character::character::Character::SetYAlignedAttachTo) is the yaw-aligned wrapper.
+    pub unsafe fn AttachTo(
+        &mut self,
+        target: *const crate::types::math::Matrix4,
+        object: *mut ::std::ffi::c_void,
+        attach_type: u32,
+        offset: *const crate::types::math::Matrix4,
+        flags: u32,
+    ) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).AttachTo).read();
+            f(self as *mut Self as _, target, object, attach_type, offset, flags)
+        }
+    }
 }
 impl Character {
+    /// The offset of the character's `CGameObject` base subobject. RTTI tests (`IsType`) and the
+    /// `CGameObject` virtuals go through the vtable at this offset rather than the primary one,
+    /// and state tasks recover the character from that subobject by subtracting this offset.
+    pub const GAME_OBJECT_BASE_OFFSET: u64 = 8;
+    /// The slot, in the vtable of the [`GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)
+    /// subobject, of `CGameObject::InitTransform(const CMatrix4f*)`: it re-bases the object's world
+    /// transform directly. `CGameWorld::TeleportPlayerInstant` moves the player character through it.
+    pub const GAME_OBJECT_INIT_TRANSFORM_SLOT: u64 = 18;
     /// `m_CurrentMotionState` while ragdolling.
     pub const MOTION_STATE_RAGDOLL: u32 = 20;
     /// `m_CurrentMotionState` while swimming, written by both swim movement cores every frame.
@@ -489,6 +1151,159 @@ fn _CharacterLodFlags_size_check() {
     }
     unreachable!()
 }
+#[repr(C, align(8))]
+pub struct CharacterVftable {
+    _vfunc_0: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_1: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_2: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_3: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_4: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_5: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_6: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_7: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_8: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_9: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_10: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_11: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_12: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_13: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_14: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_15: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_16: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_17: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_18: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_19: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_20: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_21: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_22: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_23: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_24: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_25: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_26: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_27: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_28: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_29: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_30: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_31: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_32: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_33: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_34: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_35: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_36: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_37: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_38: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    _vfunc_39: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+    ),
+    /// Attaches the character to a parent (`CCharacter::AttachTo`): `target` is the parent's
+    /// attach frame, `object` the parent object, `attach_type` a `CCharacter::AttachType`, and
+    /// `offset` the character's transform relative to the parent frame. While attached, the
+    /// character's world transform follows the parent instead of the physics proxy.
+    /// [`SetYAlignedAttachTo`](crate::character::character::Character::SetYAlignedAttachTo) is the yaw-aligned wrapper.
+    pub AttachTo: unsafe extern "system" fn(
+        this: *mut crate::character::character::Character,
+        target: *const crate::types::math::Matrix4,
+        object: *mut ::std::ffi::c_void,
+        attach_type: u32,
+        offset: *const crate::types::math::Matrix4,
+        flags: u32,
+    ),
+}
+fn _CharacterVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x148], CharacterVftable>([0u8; 0x148]);
+    }
+    unreachable!()
+}
+impl CharacterVftable {}
+impl std::convert::AsRef<CharacterVftable> for CharacterVftable {
+    fn as_ref(&self) -> &CharacterVftable {
+        self
+    }
+}
+impl std::convert::AsMut<CharacterVftable> for CharacterVftable {
+    fn as_mut(&mut self) -> &mut CharacterVftable {
+        self
+    }
+}
 /// The global HumanIK enable (`CCharacter::m_EnableHIK`): the engine gates the whole IK pass in
 /// [`UpdatePassFinalizePose_Parallel`](crate::character::character::Character::UpdatePassFinalizePose_Parallel) on it.
 pub unsafe fn get_Character_EnableHIK() -> &'static mut bool {
@@ -497,15 +1312,28 @@ pub unsafe fn get_Character_EnableHIK() -> &'static mut bool {
 pub unsafe fn get_Character_EnableLocoStrafing() -> &'static mut bool {
     unsafe { &mut *(0x142F2F300 as *mut bool) }
 }
+/// `CCharacter::m_ForceCombat`: while set, `CPlayer::UpdateMentalState` holds the player in the
+/// combat mental state.
+pub unsafe fn get_Character_ForceCombat() -> &'static mut bool {
+    unsafe { &mut *(0x142F2F2FE as *mut bool) }
+}
+/// `CCharacter::m_ForceNonCombat`: while set, `CPlayer::UpdateMentalState` holds the player in the
+/// relaxed mental state. Checked before [`Character_ForceCombat`](get_Character_ForceCombat).
+pub unsafe fn get_Character_ForceNonCombat() -> &'static mut bool {
+    unsafe { &mut *(0x142F2F2FF as *mut bool) }
+}
 pub unsafe fn get_Character_GoreEnabled() -> &'static mut bool {
     unsafe { &mut *(0x142F2F301 as *mut bool) }
 }
 crate::__bitflags! {
     #[doc =
-    " Per-character damage-handling bit-flags. Only the god-mode bit is mapped; the others cover the"]
+    " A byte of `CCharacter` bitfields holding the visibility, invulnerability, and weapons-enabled"]
     #[doc =
-    " related invulnerability variants (`m_JesusMode` and the sequence-scoped god mode among them)."]
-    pub struct DamageStateFlags : u8 { const GOD_MODE = 2usize as _; }
+    " flags. Not every bit is mapped: three of the remaining bits are, in ascending order, `Enabled`,"]
+    #[doc =
+    " `m_GhostMode`, and `m_PermanentGhostMode`, and these names are unconfirmed."] pub
+    struct DamageStateFlags : u8 { const VISIBLE = 1usize as _; const GOD_MODE = 2usize
+    as _; const JESUS_MODE = 4usize as _; const WEAPONS_ENABLED = 64usize as _; }
 }
 fn _DamageStateFlags_size_check() {
     unsafe {
@@ -596,4 +1424,24 @@ fn _SafeBoneIndex_size_check() {
         ::std::mem::transmute::<[u8; 0x4], SafeBoneIndex>([0u8; 0x4]);
     }
     unreachable!()
+}
+pub const Character_GetRenderTransform_ADDRESS: usize = 0x14075DE50;
+/// `CCharacter::GetRenderTransform`, a `CGameObject` virtual reached through the
+/// [`GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET) subobject (`game_object` is the
+/// character plus that offset): writes the render transform, the lerp of
+/// [`m_WorldMatrixT0`](crate::character::character::Character::m_WorldMatrixT0) to [`m_WorldMatrixT1`](crate::character::character::Character::m_WorldMatrixT1)
+/// by `dtf`, into `out`, and returns true.
+pub unsafe fn Character_GetRenderTransform(
+    game_object: *mut u8,
+    out: *mut crate::types::math::Matrix4,
+    dtf: f32,
+) -> bool {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            game_object: *mut u8,
+            out: *mut crate::types::math::Matrix4,
+            dtf: f32,
+        ) -> bool = ::std::mem::transmute(Character_GetRenderTransform_ADDRESS);
+        f(game_object, out, dtf)
+    }
 }

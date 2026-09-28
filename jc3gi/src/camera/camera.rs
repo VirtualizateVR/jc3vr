@@ -121,6 +121,22 @@ impl Camera {
             f(self as *mut Self as _, transform)
         }
     }
+    pub const IsBoxVisible_ADDRESS: usize = 0x14009C210;
+    /// Tests a world-space axis-aligned box (`CAABox`: min then max corner) against the camera's
+    /// frustum planes and AABB-test acceleration data, as rebuilt by
+    /// [`UpdateFrustum`](crate::camera::camera::Camera::UpdateFrustum). Returns whether any part of the box is inside.
+    pub unsafe fn IsBoxVisible(
+        &self,
+        aabb: *const [crate::types::math::Vector3; 2],
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                aabb: *const [crate::types::math::Vector3; 2],
+            ) -> bool = ::std::mem::transmute(Self::IsBoxVisible_ADDRESS);
+            f(self as *const Self as _, aabb)
+        }
+    }
 }
 impl Camera {
     /// The far-plane default the engine's `Camera` constructor applies; the engine

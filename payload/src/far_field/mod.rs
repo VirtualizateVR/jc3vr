@@ -210,7 +210,7 @@ pub unsafe fn before_do_draw(pass: *mut RenderPass, ctx: *mut RenderContext) -> 
     // ran this is a no-op; the sort context mirrors the one `DoDraw` itself builds.
     let sc = SortContext {
         m_RenderPassIndex: ctx.m_ActiveRenderPass,
-        m_RenderFrameIndex: ctx.m_TransformIndex,
+        m_RenderFrameIndex: ctx.m_RenderFrameIndex,
         m_CameraPosition: ctx.m_CameraPosition,
         m_CameraNear: ctx.CameraNear,
     };

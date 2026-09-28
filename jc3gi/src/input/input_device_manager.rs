@@ -1,4 +1,26 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// An input device class (`Input::EDeviceType`), as passed to the device manager's device lookup
+/// and action mapping.
+pub enum DeviceType {
+    Default = 0isize as _,
+    Keyboard = 1isize as _,
+    Mouse = 2isize as _,
+    Joystick = 3isize as _,
+    Gamepad = 4isize as _,
+    Memorycard = 5isize as _,
+    Microphone = 6isize as _,
+    Headphone = 7isize as _,
+    Unknown = 8isize as _,
+    DeviceTypeCount = 16isize as _,
+}
+fn _DeviceType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], DeviceType>([0u8; 0x4]);
+    }
+    unreachable!()
+}
 #[repr(C, align(8))]
 pub struct InputDeviceManager {
     vftable: *const crate::input::input_device_manager::InputDeviceManagerVftable,
@@ -29,8 +51,8 @@ impl InputDeviceManager {
     }
     pub const Update_ADDRESS: usize = 0x1402F20C0;
     /// The per-frame device poll: reads all devices, refreshes their effector states, and then runs
-    /// [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks). Effector writes injected before
-    /// this are overwritten by the poll, so inject after it instead.
+    /// [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks). The poll overwrites effector values written
+    /// before it runs.
     pub unsafe fn Update(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
