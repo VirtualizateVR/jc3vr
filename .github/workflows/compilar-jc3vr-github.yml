@@ -1,0 +1,52 @@
+name: Compilar jc3vr - prueba personal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - name: Descargar codigo y submodulos
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Compilar el mod y el inyector
+        shell: pwsh
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc -p jc3vr_payload -p jc3vr_injector
+          if ($LASTEXITCODE -ne 0) { throw "No se pudo compilar jc3vr" }
+
+      - name: Preparar archivos y cargador OpenXR
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'target/x86_64-pc-windows-msvc/release/jc3vr_payload.dll' 'dist/jc3vr_payload.dll'
+          Copy-Item 'target/x86_64-pc-windows-msvc/release/jc3vr_injector.exe' 'dist/jc3vr_injector.exe'
+          $version = '1.1.61'
+          $package = Join-Path $env:RUNNER_TEMP 'OpenXR.Loader.zip'
+          $url = "https://github.com/KhronosGroup/OpenXR-SDK-Source/releases/download/release-$version/OpenXR.Loader.$version.nupkg"
+          Invoke-WebRequest -Uri $url -OutFile $package
+          $actualHash = (Get-FileHash -Path $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = 'f9d5b5fee7038c470c6f80cf7bec1b802b55050c11d4f11179dae36c10082dae'
+          if ($actualHash -ne $expectedHash) { throw "El hash del cargador OpenXR no coincide" }
+          $expanded = Join-Path $env:RUNNER_TEMP 'OpenXR-extracted'
+          Expand-Archive -Path $package -DestinationPath $expanded -Force
+          Copy-Item (Join-Path $expanded 'native/x64/release/bin/openxr_loader.dll') 'dist/openxr_loader.dll'
+
+      - name: Guardar compilacion personal
+        uses: actions/upload-artifact@v4
+        with:
+          name: jc3vr-prueba-windows
+          path: dist/*
+          if-no-files-found: error
