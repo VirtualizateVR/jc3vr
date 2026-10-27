@@ -1,0 +1,141 @@
+name: JC3VR - prueba ojo derecho (experimental)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/jc3vr-ojo-derecho.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - name: Descargar codigo completo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Aplicar mitigacion y diagnostico automatico por ojo
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          p = Path('payload/src/hooks/graphics_engine/graphics_engine.rs')
+          s = p.read_text(encoding='utf-8')
+          start = 'static CREATE_RENDER_SETUPS_THREAD: AtomicU32 = AtomicU32::new(0);'
+          assert s.count(start) == 1, 'Cambio upstream: no se encuentra el estado de CreateRenderSetups'
+          s = s.replace(start, start + '''
+
+          // JC3VR: conservar la habilitacion de escena que recibio el primer ojo.
+          static JC3VR_FIRST_EYE_SCENE: AtomicBool = AtomicBool::new(false);
+          static JC3VR_EYE0_GATE_LOGGED: AtomicBool = AtomicBool::new(false);
+          static JC3VR_EYE1_GATE_LOGGED: AtomicBool = AtomicBool::new(false);
+          static JC3VR_SCENE_RESTORED_LOGGED: AtomicBool = AtomicBool::new(false);
+          ''', 1)
+          needle = '''        GRAPHICS_ENGINE_DRAW
+                      .get()'''
+          assert s.count(needle) == 1, 'Cambio upstream: no se encuentra la llamada al dibujo'
+          patch = '''        // Mitigacion experimental: si el primer ojo recibio escena 3D y el
+                  // segundo no, no dejar que una transicion de estado la suprima.
+                  // No altera una escena deshabilitada en ambos ojos.
+                  if crate::stereo::active() && !crate::stereo::far_phase()
+                      && let Some(ge) = graphics_engine.as_mut()
+                  {
+                      let eye = crate::stereo::draw_index();
+                      if eye == 0 {
+                          JC3VR_FIRST_EYE_SCENE.store(ge.m_DrawScene, std::sync::atomic::Ordering::Relaxed);
+                          if !JC3VR_EYE0_GATE_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                              tracing::info!(target: "eye_check", eye, draw_scene = ge.m_DrawScene, "scene gate before engine draw");
+                          }
+                      } else {
+                          let before = ge.m_DrawScene;
+                          let forced = JC3VR_FIRST_EYE_SCENE.load(std::sync::atomic::Ordering::Relaxed) && !before;
+                          if forced {
+                              ge.m_DrawScene = true;
+                              if !JC3VR_SCENE_RESTORED_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                                  tracing::warn!(target: "eye_check", "forced 3D scene ON for right eye");
+                              }
+                          }
+                          if !JC3VR_EYE1_GATE_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                              tracing::info!(target: "eye_check", eye, before, forced, "scene gate before engine draw");
+                          }
+                      }
+                  }
+          '''
+          s = s.replace(needle, patch + needle, 1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('payload/src/stereo/config.rs')
+          s = p.read_text(encoding='utf-8')
+          needle = 'defer_frame_tail: true,'
+          assert s.count(needle) == 1, 'Cambio upstream: no se encuentra el ajuste de cola diferida'
+          s = s.replace(needle, 'defer_frame_tail: false,', 1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('payload/src/hooks/game.rs')
+          s = p.read_text(encoding='utf-8')
+          needle = 'pub(super) fn hook_library() -> HookLibrary {'
+          assert s.count(needle) == 1
+          s = s.replace(needle, 'static JC3VR_EYE_CHECK_COUNTER: AtomicU32 = AtomicU32::new(0);\n\n' + needle, 1)
+          needle = '                    capture_render_camera(eye);'
+          assert s.count(needle) == 1
+          patch = '''                    // Sin menu y sin F12: registrar los draw calls reales de cada ojo.
+                              // Desactivamos el tail diferido en esta compilacion para que la
+                              // muestra ocurra despues de completar el dibujado.
+                              if JC3VR_EYE_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed) % 180 < 2 {
+                                  tracing::info!(
+                                      target: "eye_check",
+                                      eye,
+                                      indexed = DRAW_COUNTS.draw_indexed.load(Ordering::Relaxed),
+                                      direct = DRAW_COUNTS.draw.load(Ordering::Relaxed),
+                                      compute = DRAW_COUNTS.dispatch.load(Ordering::Relaxed),
+                                      "completed draw counts",
+                                  );
+                              }
+          '''
+          s = s.replace(needle, needle + '\n' + patch, 1)
+          p.write_text(s, encoding='utf-8')
+          print('Correccion experimental aplicada. Compilando...')
+          '@ | Set-Content -Path jc3vr_patch.py -Encoding utf8
+          python jc3vr_patch.py
+          if ($LASTEXITCODE -ne 0) { throw 'El parche no se pudo aplicar' }
+
+      - name: Compilar mod para Windows
+        shell: pwsh
+        run: |
+          cargo build --release --target x86_64-pc-windows-msvc -p jc3vr_payload -p jc3vr_injector
+          if ($LASTEXITCODE -ne 0) { throw 'Compilacion fallida' }
+
+      - name: Preparar archivos y cargador OpenXR
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'target/x86_64-pc-windows-msvc/release/jc3vr_payload.dll' 'dist/jc3vr_payload.dll'
+          Copy-Item 'target/x86_64-pc-windows-msvc/release/jc3vr_injector.exe' 'dist/jc3vr_injector.exe'
+          $version = '1.1.61'
+          $package = Join-Path $env:RUNNER_TEMP 'OpenXR.Loader.zip'
+          $url = "https://github.com/KhronosGroup/OpenXR-SDK-Source/releases/download/release-$version/OpenXR.Loader.$version.nupkg"
+          Invoke-WebRequest -Uri $url -OutFile $package
+          $actualHash = (Get-FileHash -Path $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = 'f9d5b5fee7038c470c6f80cf7bec1b802b55050c11d4f11179dae36c10082dae'
+          if ($actualHash -ne $expectedHash) { throw 'El hash del cargador OpenXR no coincide' }
+          $expanded = Join-Path $env:RUNNER_TEMP 'OpenXR-extracted'
+          Expand-Archive -Path $package -DestinationPath $expanded -Force
+          Copy-Item (Join-Path $expanded 'native/x64/release/bin/openxr_loader.dll') 'dist/openxr_loader.dll'
+
+      - name: Guardar build experimental
+        uses: actions/upload-artifact@v4
+        with:
+          name: jc3vr-ojo-derecho-experimental
+          path: dist/*
+          if-no-files-found: error
